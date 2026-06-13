@@ -10,6 +10,7 @@ import os, httpx, re, json
 router = APIRouter(prefix="/investigator", tags=["investigator"])
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+from services.llm_service import get_httpx_client
 
 
 @router.get("/case-summary/{crime_id}")
@@ -50,8 +51,8 @@ Provide a JSON response with:
 Return only valid JSON, no markdown."""
             url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
             payload = {"contents": [{"parts": [{"text": prompt}]}]}
-            async with httpx.AsyncClient(timeout=20.0) as client:
-                resp = await client.post(url, json=payload, headers={"X-goog-api-key": GEMINI_API_KEY})
+            client = get_httpx_client()
+            resp = await client.post(url, json=payload, headers={"X-goog-api-key": GEMINI_API_KEY})
             if resp.status_code == 200:
                 raw = resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
                 raw = re.sub(r'^```json\s*', '', raw)
@@ -153,8 +154,8 @@ Return JSON:
 Only valid JSON."""
             url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
             payload = {"contents": [{"parts": [{"text": prompt}]}]}
-            async with httpx.AsyncClient(timeout=20.0) as client:
-                resp = await client.post(url, json=payload, headers={"X-goog-api-key": GEMINI_API_KEY})
+            client = get_httpx_client()
+            resp = await client.post(url, json=payload, headers={"X-goog-api-key": GEMINI_API_KEY})
             if resp.status_code == 200:
                 raw = resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
                 raw = re.sub(r'^```json\s*', '', raw)

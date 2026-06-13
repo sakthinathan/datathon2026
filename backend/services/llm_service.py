@@ -6,6 +6,14 @@ from datetime import datetime
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
+_httpx_client = None
+
+def get_httpx_client() -> httpx.AsyncClient:
+    global _httpx_client
+    if _httpx_client is None or _httpx_client.is_closed:
+        _httpx_client = httpx.AsyncClient(timeout=30.0)
+    return _httpx_client
+
 # Base system prompt — language instruction appended dynamically per request
 SYSTEM_PROMPT_BASE = """You are SCRB CrimeBot, an expert AI assistant for the State Crime Records Bureau of Karnataka, India.
 You help police investigators, analysts, and officers query a crime database using natural language.
@@ -380,8 +388,8 @@ async def get_gemini_response(user_message: str, conversation_history: list, db,
             url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
             payload = {"contents": [{"parts": [{"text": prompt}]}]}
 
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.post(url, json=payload, headers={"X-goog-api-key": GEMINI_API_KEY})
+            client = get_httpx_client()
+            resp = await client.post(url, json=payload, headers={"X-goog-api-key": GEMINI_API_KEY})
 
             if resp.status_code != 200:
                 print(f"Gemini error {resp.status_code}: {resp.text[:200]}")
