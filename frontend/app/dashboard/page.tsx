@@ -9,7 +9,8 @@ import {
 } from 'recharts';
 
 const API_BASE = 'http://localhost:8000';
-const COLORS = ['#6366f1','#22c55e','#f59e0b','#ef4444','#38bdf8','#a855f7','#ec4899','#14b8a6','#f97316','#84cc16'];
+const COLORS = ['#0052b4','#FF8C00','#22c55e','#e53935','#4d9fff','#a855f7','#ec4899','#14b8a6','#f97316','#84cc16'];
+
 
 async function fetchAuth(path: string) {
   const token = localStorage.getItem('scrb_token');
@@ -65,15 +66,16 @@ function StatCard({ label, value, icon, color, sub, href }: any) {
 }
 
 const QUICK_LINKS = [
-  { href:'/dashboard/chat', icon:'🤖', label:'AI Investigator', desc:'Ask crime questions in natural language', color:'#6366f1' },
-  { href:'/dashboard/investigator', icon:'🔎', label:'Case Intelligence', desc:'Search FIRs, get AI summaries & leads', color:'#22c55e' },
-  { href:'/dashboard/network', icon:'🕸️', label:'Criminal Network', desc:'Visualize gang links and associations', color:'#f59e0b' },
-  { href:'/dashboard/financial', icon:'💸', label:'Financial Crimes', desc:'Track suspicious transactions & money trail', color:'#ef4444' },
-  { href:'/dashboard/sociology', icon:'🧬', label:'Sociological Insights', desc:'Demographic & economic crime patterns', color:'#a855f7' },
-  { href:'/dashboard/predictions', icon:'🔮', label:'Predictive Alerts', desc:'Early warnings & crime forecasts', color:'#ec4899' },
-  { href:'/dashboard/offenders', icon:'🕵️', label:'Offender Profiling', desc:'High-risk suspects & behavioral tags', color:'#38bdf8' },
-  { href:'/dashboard/analytics', icon:'📊', label:'Analytics', desc:'Full crime analytics dashboard', color:'#14b8a6' },
+  { href:'/dashboard/chat',         icon:'🤖', label:'AI Investigator',       desc:'Ask crime questions in natural language',      color:'#0052b4' },
+  { href:'/dashboard/investigator', icon:'🔎', label:'Case Intelligence',     desc:'Search FIRs, get AI summaries & leads',       color:'#22c55e' },
+  { href:'/dashboard/network',      icon:'🕸️', label:'Criminal Network',      desc:'Visualize gang links and associations',        color:'#FF8C00' },
+  { href:'/dashboard/financial',    icon:'💸', label:'Financial Crimes',     desc:'Track suspicious transactions & money trail', color:'#e53935' },
+  { href:'/dashboard/sociology',    icon:'🧬', label:'Sociological Insights', desc:'Demographic & economic crime patterns',       color:'#a855f7' },
+  { href:'/dashboard/predictions',  icon:'🔮', label:'Predictive Alerts',    desc:'ML early warnings & crime forecasts',         color:'#ec4899' },
+  { href:'/dashboard/offenders',    icon:'🕵️', label:'Offender Profiling',   desc:'High-risk suspects & behavioral tags',        color:'#4d9fff' },
+  { href:'/dashboard/analytics',    icon:'📊', label:'Analytics',            desc:'Full crime analytics dashboard',              color:'#14b8a6' },
 ];
+
 
 export default function DashboardHome() {
   const router = useRouter();
@@ -129,33 +131,36 @@ export default function DashboardHome() {
 
   return (
     <div>
-      {/* Hero Header */}
-      <div className="page-header" style={{ background:'linear-gradient(135deg, rgba(99,102,241,0.12) 0%, rgba(168,85,247,0.08) 100%)', borderBottom:'1px solid rgba(99,102,241,0.2)', marginBottom:0 }}>
-        <div>
-          <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:6 }}>
-            <div style={{ fontSize:28 }}>🚔</div>
+      {/* KSP Official Hero Banner */}
+      <div style={{ background:'linear-gradient(135deg, #001840 0%, #002060 50%, #001428 100%)', borderBottom:'2px solid rgba(255,140,0,0.2)', position:'relative', overflow:'hidden' }}>
+        {/* Karnataka flag stripe at very top */}
+        <div style={{ height:3, background:'linear-gradient(90deg, #FF6200 33.33%, #fff 33.33%, #fff 66.66%, #009444 66.66%)' }} />
+        {/* Background pattern */}
+        <div style={{ position:'absolute', inset:0, backgroundImage:'radial-gradient(circle at 1px 1px, rgba(0,82,180,0.08) 1px, transparent 0)', backgroundSize:'30px 30px' }} />
+        {/* Decorative glow */}
+        <div style={{ position:'absolute', right:'-50px', top:'-30px', width:300, height:200, borderRadius:'50%', background:'radial-gradient(circle, rgba(255,140,0,0.06) 0%, transparent 70%)', filter:'blur(30px)' }} />
+
+        <div className="page-header" style={{ background:'transparent', border:'none', position:'relative', height:'auto', padding:'14px 28px' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:14 }}>
+            {/* KSP Emblem */}
+            <div style={{ width:54, height:54, borderRadius:'50%', background:'radial-gradient(circle at 50% 40%, #fff8e1 0%, #ffd54f 35%, #ff8f00 65%, #bf360c 100%)', border:'2px solid rgba(255,140,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:26, boxShadow:'0 0 20px rgba(255,140,0,0.3)', flexShrink:0 }}>🚔</div>
             <div>
-              <div style={{ fontWeight:900, fontSize:22, letterSpacing:'-0.5px' }}>
-                SCRB CrimeIntel
-                <span style={{ fontSize:12, fontWeight:500, color:'var(--accent-light)', marginLeft:10, padding:'2px 10px', background:'rgba(99,102,241,0.15)', borderRadius:99, border:'1px solid rgba(99,102,241,0.3)' }}>
-                  Command Center
-                </span>
+              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                <div style={{ fontWeight:900, fontSize:20, letterSpacing:'-0.3px', color:'#fff' }}>SCRB CrimeIntel</div>
+                <span style={{ fontSize:10, fontWeight:700, color:'var(--ksp-saffron-lt)', padding:'2px 9px', background:'rgba(255,140,0,0.15)', borderRadius:99, border:'1px solid rgba(255,140,0,0.25)', letterSpacing:'0.5px' }}>COMMAND CENTER</span>
               </div>
-              <div style={{ fontSize:12, color:'var(--text-muted)', marginTop:2 }}>
-                Karnataka State Crime Records Bureau · {now.toLocaleDateString('en-IN', { weekday:'long', year:'numeric', month:'long', day:'numeric' })}
+              <div style={{ fontSize:11, color:'rgba(255,255,255,0.4)', marginTop:2 }}>ರಾಜ್ಯ ಅಪರಾಧ ದಾಖಲೆ ಬ್ಯೂರೋ · Karnataka State Police · Government of Karnataka</div>
+              <div style={{ fontSize:12, color:'rgba(255,255,255,0.55)', marginTop:3 }}>
+                Welcome, <strong style={{ color:'var(--ksp-saffron-lt)' }}>{user?.full_name?.split(' ')[0] || 'Officer'}</strong> ·
+                {now.toLocaleDateString('en-IN', { weekday:'long', year:'numeric', month:'long', day:'numeric' })} ·
+                <span style={{ marginLeft:6, padding:'1px 7px', borderRadius:99, background:'rgba(34,197,94,0.12)', color:'#22c55e', fontSize:10, fontWeight:600, border:'1px solid rgba(34,197,94,0.2)' }}>● LIVE</span>
               </div>
             </div>
           </div>
-          <div style={{ fontSize:13, color:'var(--text-secondary)' }}>
-            Welcome back, <strong style={{ color:'var(--accent-light)' }}>{user?.full_name?.split(' ')[0] || 'Officer'}</strong> · 
-            <span style={{ marginLeft:6, padding:'1px 8px', borderRadius:99, background:'rgba(34,197,94,0.1)', color:'var(--success)', fontSize:11, fontWeight:600, border:'1px solid rgba(34,197,94,0.2)' }}>
-              ● Live
-            </span>
+          <div style={{ display:'flex', gap:8 }}>
+            <Link href="/dashboard/chat" className="btn btn-saffron">🤖 AI Investigator</Link>
+            <Link href="/dashboard/predictions" className="btn btn-ghost">🔮 ML Alerts</Link>
           </div>
-        </div>
-        <div style={{ display:'flex', gap:8 }}>
-          <Link href="/dashboard/chat" className="btn btn-primary">🤖 Ask AI</Link>
-          <Link href="/dashboard/predictions" className="btn btn-ghost">🔮 Predictions</Link>
         </div>
       </div>
 
@@ -163,13 +168,14 @@ export default function DashboardHome() {
 
         {/* KPI Strip */}
         <div className="stats-grid" style={{ marginBottom:24 }}>
-          <StatCard label="Total Crime Records" value={overview.total_crimes} icon="🚨" color="#ef4444" sub="Across 31 districts" href="/dashboard/analytics" />
-          <StatCard label="Police Stations" value={overview.total_stations} icon="🚓" color="#6366f1" sub="State-wide coverage" href="/dashboard/analytics" />
-          <StatCard label="Case Solve Rate" value={`${overview.solve_rate}%`} icon="✅" color="#22c55e" sub="Cases closed" href="/dashboard/analytics" />
-          <StatCard label="Pending Investigations" value={overview.pending_investigation} icon="⏳" color="#f59e0b" sub="Active cases" href="/dashboard/analytics" />
-          <StatCard label="Critical Alerts" value={predSummary.critical} icon="🔴" color="#ef4444" sub="High-priority threats" href="/dashboard/predictions" />
+          <StatCard label="Total Crime Records"    value={overview.total_crimes}                icon="🚨" color="#e53935" sub="Across 31 districts"       href="/dashboard/analytics" />
+          <StatCard label="Police Stations"         value={overview.total_stations}              icon="🚓" color="#0052b4" sub="State-wide coverage"       href="/dashboard/analytics" />
+          <StatCard label="Case Solve Rate"         value={`${overview.solve_rate}%`}            icon="✅" color="#22c55e" sub="Cases closed"             href="/dashboard/analytics" />
+          <StatCard label="Pending Investigations"  value={overview.pending_investigation}       icon="⏳" color="#FF8C00" sub="Active cases"             href="/dashboard/analytics" />
+          <StatCard label="Critical Alerts"         value={predSummary.critical}                 icon="🔴" color="#e53935" sub="High-priority threats"    href="/dashboard/predictions" />
           <StatCard label="Suspicious Transactions" value={financialSummary.suspicious_transactions} icon="💸" color="#a855f7" sub="Financial crime flags" href="/dashboard/financial" />
         </div>
+
 
         {/* Early Warning Banner */}
         {earlyWarnings.length > 0 && (
