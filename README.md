@@ -1,26 +1,56 @@
 # 🚔 SCRB CrimeIntel — Karnataka Crime Intelligence Platform
 
-> An Intelligent Conversational AI and Crime Analytics Platform for the Karnataka State Crime Records Bureau (KSP/SCRB) Datathon.
+> An Intelligent Conversational AI and Crime Analytics Platform for the Karnataka State Crime Records Bureau (KSP/SCRB) Datathon. Fully customized with Karnataka State Police (KSP) official UI aesthetics.
 
 ---
 
 ## 📋 Project Overview
 
-SCRB CrimeIntel enables investigators, analysts, and policymakers to interact with the state crime database using **natural language queries**, providing advanced analytical capabilities grounded in criminology and sociological insights.
+SCRB CrimeIntel is a modern digital intelligence portal enabling investigators, analysts, SPs, and policymakers to interact with the state crime database using **natural language queries**, advanced D3 networking graph visualizations, ML forecasts, and sociological correlation metrics.
 
-### Key Modules
+The platform now features **Secure Role-Based Access Control (RBAC) Governance**, with dynamic navigation menus, route redirection guards, backend API protection, and an administrative account roster.
+
+### Core Modules
 
 | Module | Description |
 |---|---|
-| 🤖 AI Investigator | Natural language chat (EN + Kannada) with XAI reasoning panel |
-| 🔎 Case Intelligence | FIR search, AI case summaries, lead generation |
-| 🕸️ Criminal Network | D3 force-directed graph of suspect connections |
-| 💸 Financial Crimes | Suspicious transaction tracking and money trail network |
-| 🧬 Sociological Insights | Demographic and economic crime pattern analysis |
-| 🔮 Predictive Alerts | Early warning feed with district-level forecasts |
-| 🕵️ Offender Profiling | High-risk suspect risk scoring and behavioral tagging |
-| 📊 Analytics | Full crime analytics dashboard with 8 chart types |
-| 📋 Audit Trail | Tamper-evident audit log of all AI queries |
+| 🤖 AI Investigator | Natural language chat (EN + Kannada) with XAI SQL reasoning path visualization. |
+| 🔎 Case Intelligence | FIR search, AI-generated case summaries, and automated lead recommendations. |
+| 🕸️ Criminal Network | D3 force-directed gang visualization, centrality rankings, and organized crime clusters. |
+| 💸 Financial Crimes | Suspicious transaction tables, money trail tracking, and account threat tags. |
+| 🧬 Sociological Insights | Caste, unemployment, age, and economic crime pattern correlation analysis. |
+| 🔮 Predictions (ML) | Early warning feed featuring Ridge, Gradient Boosting, and IsolationForest forecasting. |
+| 🕵️ Offender Profiling | Suspect dossiers, repeat offender tracking, and Modus Operandi similarity matching. |
+| 📊 Analytics | Tactical statistics, district-comparison charts, and Taluk solver matrices. |
+| 👥 User Management | Account creation, jurisdiction allocation, and status toggle panel (Admin only). |
+| 📋 Audit Trail | Log entries tracing every AI query, execution IP, and SQL command (Admin only). |
+
+---
+
+## 🔑 Demo Access Credentials (5 User Roles)
+
+Login credentials representing each user persona seeded in the database:
+
+| User Persona | Username | Password | Assigned District | Navigation & Permissions |
+|---|---|---|---|---|
+| **Super Admin** | `admin` | `admin123` | `All` (State-wide) | Full read/write access + User Management + Audit Trail |
+| **District SP** | `sp_bengaluru` | `password123` | `Bengaluru Urban` | Overview charts/tables locked to Bengaluru Urban, Taluk performances |
+| **Case Investigator** | `investigator1` | `password123` | `Mysuru` | Active cases timeline, surveillance watchlist, File FIR form, status controls |
+| **Crime Analyst** | `analyst1` | `password123` | `All` (State-wide) | Predictions summary, demographics, organized communities, model details |
+| **Read-Only Viewer** | `readonly1` | `password123` | `Bengaluru Urban` | State stats, bulletins feed, print brief reports. *All sensitive pages restricted* |
+
+---
+
+## 🔒 Access Control Governance
+
+### 1. Dynamic Navigation Filtering
+Sidebar items dynamically filter depending on the logged-in user's role. Restricted links are automatically omitted from rendering.
+
+### 2. Client-Side Route Guards
+If a user tries to bypass the UI and manually enter a restricted URL (e.g. an investigator accessing `/dashboard/audit`), a client-side route guard intercepts the mount phase in `layout.tsx` and immediately redirects the page back to `/dashboard`.
+
+### 3. Backend Endpoint Role Gating
+FastAPI routers enforce role requirements using jwt validation. For example, any non-admin requesting `/auth/users` or `/audit/logs` is rejected with `403 Forbidden`. The `/financial` intelligence APIs reject `readonly` sessions.
 
 ---
 
@@ -28,10 +58,10 @@ SCRB CrimeIntel enables investigators, analysts, and policymakers to interact wi
 
 | Layer | Technology |
 |---|---|
-| Frontend | Next.js 16, React 19, Recharts, Leaflet |
-| Backend | FastAPI (Python 3.13), SQLAlchemy, SQLite |
-| AI | Google Gemini 2.5 Flash |
-| Auth | JWT (python-jose + bcrypt) |
+| **Frontend** | Next.js 16 (App Router), React 19, Recharts, Leaflet, Vanilla CSS |
+| **Backend** | FastAPI (Python 3.13), SQLAlchemy, SQLite |
+| **AI Engine** | Google Gemini 2.5 Flash |
+| **Auth** | JWT (python-jose + bcrypt) |
 
 ---
 
@@ -47,8 +77,8 @@ SCRB CrimeIntel enables investigators, analysts, and policymakers to interact wi
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/scrb-crimeintel.git
-cd scrb-crimeintel
+git clone https://github.com/sakthinathan/datathon2026.git
+cd datathon2026
 ```
 
 ---
@@ -76,7 +106,7 @@ cp .env.example .env
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-The database is **auto-seeded** on first run with ~3.3 lakh crime records across 31 Karnataka districts.
+The SQLite database `crime.db` is **automatically seeded** on the first run with user profiles, police stations, crime records, suspect connections, predictions, and transaction logs.
 
 Backend API docs: http://localhost:8000/docs
 
@@ -85,7 +115,7 @@ Backend API docs: http://localhost:8000/docs
 ### 3. Frontend Setup
 
 ```bash
-cd frontend
+cd ../frontend
 
 # Install dependencies
 npm install
@@ -94,22 +124,13 @@ npm install
 npm run dev
 ```
 
-Frontend: http://localhost:3000
-
----
-
-### 4. Login
-
-| Field | Value |
-|---|---|
-| Username | `admin` |
-| Password | `admin123` |
+Frontend UI: http://localhost:3000
 
 ---
 
 ## 🔑 Environment Variables
 
-Copy `backend/.env.example` to `backend/.env` and fill in:
+Copy `backend/.env.example` to `backend/.env` and configure:
 
 ```env
 GEMINI_API_KEY=your_gemini_api_key_here
@@ -118,7 +139,7 @@ SECRET_KEY=your_jwt_secret_key_here
 
 Get a free Gemini API key at: https://aistudio.google.com/app/apikey
 
-> **Note:** The app works without a Gemini API key — it falls back to smart keyword-based SQL queries. You only need the key for full AI-powered natural language responses.
+> **Note:** The app functions without a Gemini API key by falling back to smart regex-based SQL queries. The key is only required for full natural language conversational answers.
 
 ---
 
@@ -141,33 +162,38 @@ cd tests/e2e
 ## 📁 Project Structure
 
 ```
-scrb-crimeintel/
+datathon2026/
 ├── backend/
-│   ├── main.py                  # FastAPI app entry point
-│   ├── database.py              # SQLAlchemy models + DB setup
+│   ├── main.py                  # FastAPI entry point
+│   ├── database.py              # SQLAlchemy schemas + DB setup
 │   ├── requirements.txt         # Python dependencies
-│   ├── .env.example             # Environment variable template
-│   ├── routers/                 # API route handlers (10 modules)
+│   ├── routers/                 # API route handlers (11 routers)
+│   │   ├── auth.py              # Login + User administration
+│   │   ├── audit.py             # Query auditing
+│   │   ├── analytics.py         # Dynamic stats & district comparison
+│   │   └── investigator.py      # Case summaries, timelines, FIR submissions
 │   ├── services/
-│   │   └── llm_service.py       # Gemini AI + smart SQL fallback
+│   │   └── llm_service.py       # Gemini AI service + Kannada translation
 │   └── data/
-│       └── seed_data.py         # Auto-seeds DB on first run
+│       └── seed_data.py         # Database seeder logic
 │
 ├── frontend/
-│   ├── app/dashboard/           # All 10 dashboard module pages
-│   ├── app/login/               # Login page
-│   └── lib/api.ts               # API helper functions
+│   ├── app/dashboard/           # Dashboard module folders
+│   │   ├── users/               # Super Admin User roster
+│   │   ├── page.tsx             # 5 custom dynamic sub-dashboard layouts
+│   │   └── layout.tsx           # Sidebar navigation filter + route guards
+│   └── lib/api.ts               # Fetch client functions
 │
 └── tests/
-    ├── backend/                 # 124 pytest API tests
-    └── e2e/                     # 21 Playwright browser tests
+    ├── backend/                 # Pytest API suites
+    └── e2e/                     # Playwright browser integration tests
 ```
 
 ---
 
 ## 👥 Team Workflow
 
-1. Each member runs the backend and frontend **locally**
-2. The SQLite DB is seeded automatically — no shared DB needed
-3. Each member gets their own free Gemini API key from [Google AI Studio](https://aistudio.google.com/app/apikey)
-4. Never commit `.env` files or `*.db` files (covered by `.gitignore`)
+1. Each developer runs the backend and frontend **locally**.
+2. The database is seeded locally—no network resource database credentials needed.
+3. Obtain personal free Gemini API keys via [Google AI Studio](https://aistudio.google.com/app/apikey).
+4. Never commit `.env` keys or `.db` SQLite binaries to Git (enforced in `.gitignore`).
