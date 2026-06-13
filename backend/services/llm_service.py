@@ -342,76 +342,95 @@ async def get_gemini_response(user_message: str, conversation_history: list, db,
     if not GEMINI_API_KEY or GEMINI_API_KEY == "TEST_DISABLED":
         return get_mock_response(user_message, db, ui_language)
 
-    try:
-        # Pre-fetch real data for specific lookups so Gemini can reference actual records
-        pre_fetched_data = ""
-        pre_sql = ""
+    max_retries = 3
+    attempt = 0
+    feedback_msg = ""
+    history_text = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in conversation_history[-8:]])
+    system_prompt = build_system_prompt(language)
 
-        if fir_num:
-            pre_sql = f"SELECT fir_number, date, time, district, taluk, police_station, crime_type, ipc_section, severity, status, description, victim_count, accused_count, property_value FROM crimes WHERE UPPER(fir_number) = '{fir_num}' LIMIT 1"
-            try:
-                pre_result = db.execute(text(pre_sql))
-                pre_cols = list(pre_result.keys())
-                pre_rows = pre_result.fetchall()
-                if pre_rows:
-                    pre_fetched_data = f"\n\nPRE-FETCHED DATABASE RESULT for '{fir_num}':\n{format_fir_detail(pre_rows[0], pre_cols)}\n\nYou MUST base your answer on this real data above."
-                else:
-                    pre_fetched_data = f"\n\nDATABASE LOOKUP: No record found for FIR '{fir_num}'. Tell the user the case was not found and suggest checking the FIR number format."
-            except Exception as e:
-                print(f"Pre-fetch error: {e}")
+    pre_fetched_data = ""
+    pre_sql = ""
+    pre_rows = None
+    pre_cols = None
 
-        history_text = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in conversation_history[-8:]])
-        # Use language-aware system prompt so Gemini always replies in correct language
-        system_prompt = build_system_prompt(language)
-        prompt = f"{system_prompt}\n\nCONVERSATION HISTORY:\n{history_text}{pre_fetched_data}\n\nUSER: {user_message}\n\nRespond with ONLY a valid JSON object (no markdown, no code fences)."
+    if fir_num:
+        pre_sql = f"SELECT fir_number, date, time, district, taluk, police_station, crime_type, ipc_section, severity, status, description, victim_count, accused_count, property_value FROM crimes WHERE UPPER(fir_number) = '{fir_num}' LIMIT 1"
+        try:
+            pre_result = db.execute(text(pre_sql))
+            pre_cols = list(pre_result.keys())
+            pre_rows = pre_result.fetchall()
+            if pre_rows:
+                pre_fetched_data = f"\n\nPRE-FETCHED DATABASE RESULT for '{fir_num}':\n{format_fir_detail(pre_rows[0], pre_cols)}\n\nYou MUST base your answer on this real data above."
+            else:
+                pre_fetched_data = f"\n\nDATABASE LOOKUP: No record found for FIR '{fir_num}'. Tell the user the case was not found and suggest checking the FIR number format."
+        except Exception as e:
+            print(f"Pre-fetch error: {e}")
 
-        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
-        payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    while attempt <= max_retries:
+        try:
+            if attempt == 0:
+                prompt = f"{system_prompt}\n\nCONVERSATION HISTORY:\n{history_text}{pre_fetched_data}\n\nUSER: {user_message}\n\nRespond with ONLY a valid JSON object (no markdown, no code fences)."
+            else:
+                prompt = (
+                    f"{system_prompt}\n\nCONVERSATION HISTORY:\n{history_text}{pre_fetched_data}\n\nUSER: {user_message}\n\n"
+                    f"{feedback_msg}\n\n"
+                    f"Please inspect the database schema, correct the syntax, and output a valid SQL statement in the JSON object (no markdown, no code fences)."
+                )
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(url, json=payload, headers={"X-goog-api-key": GEMINI_API_KEY})
+            url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+            payload = {"contents": [{"parts": [{"text": prompt}]}]}
 
-        if resp.status_code != 200:
-            print(f"Gemini error {resp.status_code}: {resp.text[:200]}")
-            return get_mock_response(user_message, db)
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(url, json=payload, headers={"X-goog-api-key": GEMINI_API_KEY})
 
-        data = resp.json()
-        raw = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-        raw = re.sub(r'^```json\s*', '', raw)
-        raw = re.sub(r'\s*```$', '', raw)
-        raw = re.sub(r'^```\s*', '', raw)
-        parsed = json.loads(raw)
+            if resp.status_code != 200:
+                print(f"Gemini error {resp.status_code}: {resp.text[:200]}")
+                return get_mock_response(user_message, db, ui_language)
 
-        sql_query = parsed.get("sql", "") or pre_sql
-        result_count = 0
-        sql_data = ""
+            data = resp.json()
+            raw = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+            raw = re.sub(r'^```json\s*', '', raw)
+            raw = re.sub(r'\s*```$', '', raw)
+            raw = re.sub(r'^```\s*', '', raw)
+            parsed = json.loads(raw)
 
-        if sql_query and sql_query.strip().upper().startswith("SELECT"):
-            try:
-                result = db.execute(text(sql_query))
-                cols = list(result.keys())
-                rows = result.fetchall()
-                result_count = len(rows)
-                # If Gemini produced a different SQL, use its results to enrich the answer
-                if rows and not pre_fetched_data:
-                    sql_data = format_sql_results(rows, cols)
-            except Exception as sql_err:
-                print(f"SQL exec error: {sql_err}")
+            sql_query = parsed.get("sql", "") or pre_sql
+            result_count = 0
+            sql_data = ""
 
-        # If Gemini gave a generic answer but we have real pre-fetched data, override
-        answer = parsed.get("answer", "")
-        if pre_fetched_data and pre_rows and (not answer or len(answer) < 50):
-            answer = f"🔍 **Case Details Found**\n\n{format_fir_detail(pre_rows[0], pre_cols)}"
-            result_count = 1
+            if sql_query and sql_query.strip().upper().startswith("SELECT"):
+                try:
+                    result = db.execute(text(sql_query))
+                    cols = list(result.keys())
+                    rows = result.fetchall()
+                    result_count = len(rows)
+                    # If Gemini produced a different SQL, use its results to enrich the answer
+                    if rows and not pre_fetched_data:
+                        sql_data = format_sql_results(rows, cols)
+                except Exception as sql_err:
+                    print(f"SQL exec error on attempt {attempt}: {sql_err}")
+                    feedback_msg = f"The SQL query you generated: `{sql_query}` failed with error: `{str(sql_err)}`."
+                    attempt += 1
+                    continue
 
-        return {
-            "answer": answer or "I could not process that query.",
-            "sql": sql_query,
-            "insights": parsed.get("insights", []),
-            "result_count": result_count,
-            "language": language
-        }
+            # If SQL execution succeeded, or if no SELECT query was run, construct response
+            answer = parsed.get("answer", "")
+            if pre_fetched_data and pre_rows and (not answer or len(answer) < 50):
+                answer = f"🔍 **Case Details Found**\n\n{format_fir_detail(pre_rows[0], pre_cols)}"
+                result_count = 1
 
-    except Exception as e:
-        print(f"Gemini exception: {e}")
-        return get_mock_response(user_message, db, ui_language)
+            return {
+                "answer": answer or "I could not process that query.",
+                "sql": sql_query,
+                "insights": parsed.get("insights", []),
+                "result_count": result_count,
+                "language": language
+            }
+
+        except Exception as e:
+            print(f"Gemini exception on attempt {attempt}: {e}")
+            attempt += 1
+            if attempt > max_retries:
+                return get_mock_response(user_message, db, ui_language)
+
+    return get_mock_response(user_message, db, ui_language)

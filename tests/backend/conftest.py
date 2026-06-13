@@ -161,9 +161,14 @@ def seed_test_data(db_session):
 
 
 @pytest.fixture(scope="session")
-def override_db(db_session):
+def override_db(db_engine):
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=db_engine)
     def _override():
-        yield db_session
+        db = SessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
     return _override
 
 

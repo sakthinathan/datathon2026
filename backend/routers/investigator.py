@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from database import get_db, Crime, Suspect
@@ -255,6 +255,7 @@ class StatusUpdate(BaseModel):
 @router.post("/crimes")
 async def create_crime(
     crime_in: CrimeCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
@@ -304,6 +305,13 @@ async def create_crime(
     db.add(new_crime)
     db.commit()
     db.refresh(new_crime)
+
+    try:
+        from services.ml_service import train_and_save_all_models
+        background_tasks.add_task(train_and_save_all_models, db)
+    except Exception as e:
+        print(f"Error starting background retraining: {e}")
+
     return {"message": "FIR crime record filed successfully", "id": new_crime.id, "fir_number": new_crime.fir_number}
 
 

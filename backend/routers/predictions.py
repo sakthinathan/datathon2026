@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from database import get_db, Prediction, Crime
@@ -169,3 +169,13 @@ async def ml_anomalies(db: Session = Depends(get_db),
                        current_user=Depends(get_current_user)):
     """IsolationForest crime spike anomaly detection results."""
     return detect_crime_spikes(db)
+
+
+@router.post("/retrain")
+async def trigger_retrain(background_tasks: BackgroundTasks, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    """Asynchronously retrains all district ML models in the background."""
+    if current_user.role != "super_admin":
+        raise HTTPException(status_code=403, detail="Access denied: Admin only")
+    from services.ml_service import train_and_save_all_models
+    background_tasks.add_task(train_and_save_all_models, db)
+    return {"status": "accepted", "message": "ML model retraining started in the background."}

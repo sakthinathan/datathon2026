@@ -19,6 +19,25 @@ async def lifespan(app: FastAPI):
         run_seed()
     except Exception as e:
         print(f"Seed warning: {e}")
+
+    # Startup ML models check and train if not present
+    try:
+        from database import SessionLocal
+        from services.ml_service import MODELS_DIR, train_and_save_all_models
+        pkl_files = []
+        if os.path.exists(MODELS_DIR):
+            pkl_files = [f for f in os.listdir(MODELS_DIR) if f.endswith(".pkl")]
+        if not pkl_files:
+            print("🚀 Startup: No serialized ML models found. Starting initial model training...")
+            db = SessionLocal()
+            try:
+                train_and_save_all_models(db)
+            finally:
+                db.close()
+        else:
+            print(f"✨ Startup: Found {len(pkl_files)} serialized ML models. Skipping initial training.")
+    except Exception as e:
+        print(f"Startup ML check warning: {e}")
     yield
 
 app = FastAPI(
