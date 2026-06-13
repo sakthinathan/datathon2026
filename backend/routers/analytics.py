@@ -8,13 +8,32 @@ from typing import Optional
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 @router.get("/overview")
-async def get_overview(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
-    total_crimes = db.query(func.count(Crime.id)).scalar()
-    total_stations = db.query(func.count(PoliceStation.id)).scalar()
-    critical = db.query(func.count(Crime.id)).filter(Crime.severity == "Critical").scalar()
-    solved = db.query(func.count(Crime.id)).filter(Crime.status == "Closed").scalar()
-    recent = db.query(func.count(Crime.id)).filter(Crime.year == 2024).scalar()
-    pending = db.query(func.count(Crime.id)).filter(Crime.status == "Under Investigation").scalar()
+async def get_overview(district: Optional[str] = None, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    if current_user.role == "district_sp":
+        district = current_user.district
+
+    q_crimes = db.query(func.count(Crime.id))
+    q_stations = db.query(func.count(PoliceStation.id))
+    q_critical = db.query(func.count(Crime.id)).filter(Crime.severity == "Critical")
+    q_solved = db.query(func.count(Crime.id)).filter(Crime.status == "Closed")
+    q_recent = db.query(func.count(Crime.id)).filter(Crime.year == 2024)
+    q_pending = db.query(func.count(Crime.id)).filter(Crime.status == "Under Investigation")
+
+    if district and district != "All":
+        q_crimes = q_crimes.filter(Crime.district == district)
+        q_stations = q_stations.filter(PoliceStation.district == district)
+        q_critical = q_critical.filter(Crime.district == district)
+        q_solved = q_solved.filter(Crime.district == district)
+        q_recent = q_recent.filter(Crime.district == district)
+        q_pending = q_pending.filter(Crime.district == district)
+
+    total_crimes = q_crimes.scalar() or 0
+    total_stations = q_stations.scalar() or 0
+    critical = q_critical.scalar() or 0
+    solved = q_solved.scalar() or 0
+    recent = q_recent.scalar() or 0
+    pending = q_pending.scalar() or 0
+
     return {
         "total_crimes": total_crimes,
         "total_stations": total_stations,
@@ -23,15 +42,24 @@ async def get_overview(db: Session = Depends(get_db), current_user=Depends(get_c
         "solve_rate": round((solved / total_crimes * 100), 1) if total_crimes else 0,
         "recent_year_crimes": recent,
         "pending_investigation": pending,
-        "districts_covered": 31,
+        "districts_covered": 1 if (district and district != "All") else 31,
     }
 
 @router.get("/trends/yearly")
-async def yearly_trends(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
-    result = db.execute(text(
-        "SELECT year, COUNT(*) as total, SUM(CASE WHEN status='Closed' THEN 1 ELSE 0 END) as solved "
-        "FROM crimes GROUP BY year ORDER BY year"
-    ))
+async def yearly_trends(district: Optional[str] = None, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    if current_user.role == "district_sp":
+        district = current_user.district
+
+    if district and district != "All":
+        result = db.execute(text(
+            "SELECT year, COUNT(*) as total, SUM(CASE WHEN status='Closed' THEN 1 ELSE 0 END) as solved "
+            "FROM crimes WHERE district=:d GROUP BY year ORDER BY year"
+        ), {"d": district})
+    else:
+        result = db.execute(text(
+            "SELECT year, COUNT(*) as total, SUM(CASE WHEN status='Closed' THEN 1 ELSE 0 END) as solved "
+            "FROM crimes GROUP BY year ORDER BY year"
+        ))
     rows = result.fetchall()
     return [{"year": r[0], "total": r[1], "solved": r[2], "solve_rate": round(r[2]/r[1]*100,1) if r[1] else 0} for r in rows]
 
@@ -74,8 +102,14 @@ async def by_crime_type(year: Optional[int] = None, district: Optional[str] = No
     return [{"crime_type": r[0], "total": r[1], "ipc_section": r[2]} for r in rows]
 
 @router.get("/severity-distribution")
-async def severity_distribution(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
-    result = db.execute(text("SELECT severity, COUNT(*) as total FROM crimes GROUP BY severity ORDER BY total DESC"))
+async def severity_distribution(district: Optional[str] = None, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    if current_user.role == "district_sp":
+        district = current_user.district
+
+    if district and district != "All":
+        result = db.execute(text("SELECT severity, COUNT(*) as total FROM crimes WHERE district=:d GROUP BY severity ORDER BY total DESC"), {"d": district})
+    else:
+        result = db.execute(text("SELECT severity, COUNT(*) as total FROM crimes GROUP BY severity ORDER BY total DESC"))
     rows = result.fetchall()
     return [{"severity": r[0], "total": r[1]} for r in rows]
 

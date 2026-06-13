@@ -4,6 +4,7 @@ from sqlalchemy import text
 from database import get_db, Crime, Suspect
 from routers.auth import get_current_user
 from typing import Optional
+from pydantic import BaseModel
 import os, httpx, re, json
 
 router = APIRouter(prefix="/investigator", tags=["investigator"])
@@ -229,3 +230,99 @@ async def search_cases(
         "crime_type": r[4], "severity": r[5], "status": r[6],
         "description": (r[7] or "")[:100]
     } for r in rows]
+
+
+class CrimeCreate(BaseModel):
+    fir_number: str
+    date: str
+    time: str
+    district: str
+    taluk: str
+    police_station: str
+    crime_type: str
+    ipc_section: str
+    severity: str
+    description: str
+    victim_count: int = 1
+    accused_count: int = 1
+    property_value: float = 0.0
+
+
+class StatusUpdate(BaseModel):
+    status: str
+
+
+@router.post("/crimes")
+async def create_crime(
+    crime_in: CrimeCreate,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+    if current_user.role not in ["super_admin", "investigator", "district_sp"]:
+        raise HTTPException(status_code=403, detail="Not authorized to file FIRs")
+    
+    # Check if FIR already exists
+    existing = db.query(Crime).filter(Crime.fir_number == crime_in.fir_number).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="FIR number already exists")
+    
+    try:
+        from datetime import datetime
+        dt = datetime.strptime(crime_in.date, "%Y-%m-%d")
+        year = dt.year
+        month = dt.month
+    except Exception:
+        from datetime import datetime
+        now = datetime.utcnow()
+        year = now.year
+        month = now.month
+    
+    # Simple coordinates generation based on hash for display consistency
+    lat = 12.9 + (0.01 * (hash(crime_in.fir_number) % 10))
+    lon = 77.5 + (0.01 * (hash(crime_in.fir_number) % 10))
+
+    new_crime = Crime(
+        fir_number=crime_in.fir_number,
+        date=crime_in.date,
+        time=crime_in.time,
+        year=year,
+        month=month,
+        district=crime_in.district,
+        taluk=crime_in.taluk,
+        police_station=crime_in.police_station,
+        crime_type=crime_in.crime_type,
+        ipc_section=crime_in.ipc_section,
+        severity=crime_in.severity,
+        status="Filed",
+        latitude=lat,
+        longitude=lon,
+        description=crime_in.description,
+        victim_count=crime_in.victim_count,
+        accused_count=crime_in.accused_count,
+        property_value=crime_in.property_value
+    )
+    db.add(new_crime)
+    db.commit()
+    db.refresh(new_crime)
+    return {"message": "FIR crime record filed successfully", "id": new_crime.id, "fir_number": new_crime.fir_number}
+
+
+@router.post("/crimes/{crime_id}/update-status")
+async def update_crime_status(
+    crime_id: int,
+    status_in: StatusUpdate,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+    if current_user.role not in ["super_admin", "investigator", "district_sp"]:
+        raise HTTPException(status_code=403, detail="Not authorized to edit cases")
+    
+    crime = db.query(Crime).filter(Crime.id == crime_id).first()
+    if not crime:
+        raise HTTPException(status_code=404, detail="Crime record not found")
+        
+    crime.status = status_in.status
+    db.commit()
+    db.refresh(crime)
+    return {"message": f"Case status updated to {crime.status}", "status": crime.status}
+

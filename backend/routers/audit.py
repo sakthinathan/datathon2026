@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Response, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from database import get_db, AuditLog, ChatMessage, ChatSession
@@ -14,6 +14,8 @@ async def get_audit_logs(limit: int = 100, offset: int = 0,
                           username: Optional[str] = None,
                           db: Session = Depends(get_db),
                           current_user=Depends(get_current_user)):
+    if current_user.role != "super_admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
     q = db.query(AuditLog)
     if username:
         q = q.filter(AuditLog.username == username)
@@ -31,6 +33,8 @@ async def get_audit_logs(limit: int = 100, offset: int = 0,
 
 @router.get("/export/csv")
 async def export_audit_csv(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    if current_user.role != "super_admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
     logs = db.query(AuditLog).order_by(AuditLog.timestamp.desc()).limit(1000).all()
     output = io.StringIO()
     writer = csv.writer(output)
@@ -47,9 +51,12 @@ async def export_audit_csv(db: Session = Depends(get_db), current_user=Depends(g
 
 @router.get("/stats")
 async def audit_stats(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    if current_user.role != "super_admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
     total = db.query(AuditLog).count()
     result = db.execute(text(
         "SELECT username, COUNT(*) as queries FROM audit_logs GROUP BY username ORDER BY queries DESC LIMIT 10"
     ))
     top_users = [{"username": r[0], "queries": r[1]} for r in result.fetchall()]
     return {"total_queries": total, "top_users": top_users}
+

@@ -15,8 +15,24 @@ const NAV_ITEMS = [
   { href: '/dashboard/predictions',  icon: '🔮', label: 'Predictions',         section: 'Analysis', badge: 'ML' },
   { href: '/dashboard/offenders',    icon: '🕵️', label: 'Offender Profiling',  section: 'Analysis' },
   { href: '/dashboard/sociology',    icon: '🧬', label: 'Sociological Insights',section: 'Analysis' },
+  { href: '/dashboard/users',        icon: '👥', label: 'User Management',     section: 'System' },
   { href: '/dashboard/audit',        icon: '📋', label: 'Audit Trail',         section: 'System' },
 ];
+
+const ROLE_NAV_RULES: { [key: string]: string[] } = {
+  '/dashboard':             ['super_admin', 'district_sp', 'investigator', 'analyst', 'readonly'],
+  '/dashboard/chat':        ['super_admin', 'district_sp', 'investigator', 'analyst'],
+  '/dashboard/investigator':['super_admin', 'district_sp', 'investigator', 'analyst', 'readonly'],
+  '/dashboard/map':         ['super_admin', 'district_sp', 'investigator', 'analyst', 'readonly'],
+  '/dashboard/network':     ['super_admin', 'district_sp', 'investigator', 'analyst'],
+  '/dashboard/financial':   ['super_admin', 'district_sp', 'investigator', 'analyst'],
+  '/dashboard/analytics':   ['super_admin', 'district_sp', 'analyst', 'readonly'],
+  '/dashboard/predictions':  ['super_admin', 'district_sp', 'investigator', 'analyst', 'readonly'],
+  '/dashboard/offenders':    ['super_admin', 'district_sp', 'investigator', 'analyst'],
+  '/dashboard/sociology':    ['super_admin', 'district_sp', 'analyst', 'readonly'],
+  '/dashboard/users':        ['super_admin'],
+  '/dashboard/audit':        ['super_admin'],
+};
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router   = useRouter();
@@ -28,8 +44,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const u     = getUser();
     const token = localStorage.getItem('scrb_token');
     if (!token || !u) { router.replace('/login'); return; }
+    
+    // Route guard check
+    const allowed = ROLE_NAV_RULES[pathname];
+    if (allowed && !allowed.includes(u.role)) {
+      router.replace('/dashboard');
+      return;
+    }
+    
     setUser(u);
-  }, [router]);
+  }, [router, pathname]);
 
   // Live clock
   useEffect(() => {
@@ -51,7 +75,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     </div>
   );
 
-  const sections  = [...new Set(NAV_ITEMS.map(n => n.section))];
+  const allowedItems = NAV_ITEMS.filter(item => {
+    const allowed = ROLE_NAV_RULES[item.href];
+    return allowed && allowed.includes(user.role);
+  });
+  const sections  = [...new Set(allowedItems.map(n => n.section))];
   const initials  = user.full_name?.split(' ').map((w: string) => w[0]).join('').slice(0,2).toUpperCase() || 'KP';
   const dateStr   = new Date().toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
 
@@ -80,7 +108,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {sections.map(section => (
             <div key={section}>
               <div className="nav-section-label">{section}</div>
-              {NAV_ITEMS.filter(n => n.section === section).map(item => (
+              {allowedItems.filter(n => n.section === section).map(item => (
                 <Link key={item.href} href={item.href}
                   className={`nav-item ${pathname === item.href ? 'active' : ''}`}>
                   <span className="nav-icon">{item.icon}</span>

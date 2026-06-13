@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from database import get_db, FinancialAccount, FinancialTransaction
@@ -15,6 +15,8 @@ async def suspicious_transactions(
     current_user=Depends(get_current_user)
 ):
     """All transactions flagged as suspicious"""
+    if current_user.role == "readonly":
+        raise HTTPException(status_code=403, detail="Access denied for readonly role")
     result = db.execute(text("""
         SELECT ft.id, ft.amount, ft.date, ft.transaction_type, ft.flag_reason,
                fa_from.account_number as from_acc, fa_from.bank_name as from_bank,
@@ -43,6 +45,8 @@ async def money_trail(
     current_user=Depends(get_current_user)
 ):
     """All financial accounts and transactions linked to a suspect"""
+    if current_user.role == "readonly":
+        raise HTTPException(status_code=403, detail="Access denied for readonly role")
     accounts = db.execute(text("""
         SELECT id, account_number, bank_name, account_type, flagged, flag_reason
         FROM financial_accounts WHERE suspect_id = :sid
@@ -82,6 +86,8 @@ async def financial_network_graph(
     current_user=Depends(get_current_user)
 ):
     """D3-compatible node/link format for money trail visualization"""
+    if current_user.role == "readonly":
+        raise HTTPException(status_code=403, detail="Access denied for readonly role")
     accounts = db.execute(text("""
         SELECT fa.id, fa.account_number, fa.bank_name, fa.account_type, fa.flagged,
                s.name as suspect_name, s.risk_level, s.district

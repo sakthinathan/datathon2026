@@ -37,8 +37,8 @@ export const api = {
   getMe: () => request('/auth/me'),
 
   // Analytics
-  getOverview: () => request('/analytics/overview'),
-  getYearlyTrends: () => request('/analytics/trends/yearly'),
+  getOverview: (district?: string) => request(`/analytics/overview${district ? `?district=${encodeURIComponent(district)}` : ''}`),
+  getYearlyTrends: (district?: string) => request(`/analytics/trends/yearly${district ? `?district=${encodeURIComponent(district)}` : ''}`),
   getMonthlyTrends: (year?: number) => request(`/analytics/trends/monthly${year ? `?year=${year}` : ''}`),
   getByDistrict: (year?: number, crimeType?: string) => {
     const params = new URLSearchParams();
@@ -52,7 +52,7 @@ export const api = {
     if (district) params.set('district', district);
     return request(`/analytics/by-crime-type?${params}`);
   },
-  getSeverityDist: () => request('/analytics/severity-distribution'),
+  getSeverityDist: (district?: string) => request(`/analytics/severity-distribution${district ? `?district=${encodeURIComponent(district)}` : ''}`),
   getHeatmapData: (year?: number, crimeType?: string) => {
     const params = new URLSearchParams();
     if (year) params.set('year', String(year));
@@ -94,4 +94,9 @@ export const api = {
   // Audit
   getAuditLogs: (limit?: number, offset?: number) => request(`/audit/logs?limit=${limit || 100}&offset=${offset || 0}`),
   getAuditStats: () => request('/audit/stats'),
+
+  // Users Management
+  listUsers: () => request('/auth/users'),
+  createUser: (data: any) => request('/auth/users', { method: 'POST', body: JSON.stringify(data) }),
+  toggleUserStatus: (id: number) => request(`/auth/users/${id}/toggle`, { method: 'POST' }),
 };

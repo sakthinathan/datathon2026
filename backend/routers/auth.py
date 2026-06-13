@@ -94,6 +94,13 @@ async def get_me(current_user: User = Depends(get_current_user)):
         permissions=ROLE_PERMISSIONS.get(current_user.role, ["read"])
     )
 
+class UserCreate(BaseModel):
+    username: str
+    password: str
+    full_name: str
+    role: str
+    district: str
+
 @router.get("/users")
 async def list_users(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     if current_user.role != "super_admin":
@@ -101,3 +108,52 @@ async def list_users(db: Session = Depends(get_db), current_user: User = Depends
     users = db.query(User).all()
     return [{"id": u.id, "username": u.username, "full_name": u.full_name,
              "role": u.role, "district": u.district, "is_active": u.is_active} for u in users]
+
+@router.post("/users")
+async def create_user(
+    user_in: UserCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if current_user.role != "super_admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    # Check if user already exists
+    existing = db.query(User).filter(User.username == user_in.username).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Username already registered")
+    
+    hashed_password = bcrypt.hashpw(user_in.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    new_user = User(
+        username=user_in.username,
+        hashed_password=hashed_password,
+        full_name=user_in.full_name,
+        role=user_in.role,
+        district=user_in.district,
+        is_active=True
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return {"message": "User created successfully", "username": new_user.username}
+
+@router.post("/users/{user_id}/toggle")
+async def toggle_user_status(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if current_user.role != "super_admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    user_to_toggle = db.query(User).filter(User.id == user_id).first()
+    if not user_to_toggle:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if user_to_toggle.id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot toggle your own status")
+        
+    user_to_toggle.is_active = not user_to_toggle.is_active
+    db.commit()
+    return {"message": f"User status toggled to {user_to_toggle.is_active}", "is_active": user_to_toggle.is_active}
+
