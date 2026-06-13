@@ -90,6 +90,7 @@ export const api = {
   getHotspots: () => request('/predictions/hotspots'),
   getDistrictForecast: (district: string) => request(`/predictions/forecast/${encodeURIComponent(district)}`),
   getPredictionSummary: () => request('/predictions/summary'),
+  getMlDistrictRankings: () => request('/predictions/ml/district-rankings'),
 
   // Audit
   getAuditLogs: (limit?: number, offset?: number) => request(`/audit/logs?limit=${limit || 100}&offset=${offset || 0}`),

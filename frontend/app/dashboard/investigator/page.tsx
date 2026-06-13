@@ -15,7 +15,44 @@ async function fetchAuth(path: string, opts: RequestInit = {}) {
 }
 
 const SEV_COLOR: any = { Critical:'var(--danger)', High:'var(--warning)', Medium:'var(--accent)', Low:'var(--success)' };
-const STATUS_COLOR: any = { 'Closed':'var(--success)', 'Under Investigation':'var(--warning)', 'Chargesheeted':'var(--info)', Filed:'var(--text-muted)', Acquitted:'#64748b' };
+const STATUS_COLOR: any = { 'Closed':'var(--success)', 'Under Investigation':'var(--warning)', 'Chargesheeted':'var(--info)', Filed:'var(--text-muted)', Acquitted:'#64748b', 'Trial Stage':'var(--accent)' };
+const STAGES = ['Filed', 'Under Investigation', 'Chargesheeted', 'Trial Stage', 'Closed'];
+
+const STAGE_TASKS: Record<string, string[]> = {
+  'Filed': [
+    'FIR document verified & signed',
+    'Initial GD (General Diary) entry completed',
+    'Assigned to Investigating Officer (IO)'
+  ],
+  'Under Investigation': [
+    'Crime scene visited & map coordinates verified',
+    'Initial witnesses interviewed & statements recorded',
+    'AI leads generated and cross-referenced',
+    'Suspects identified & backgrounds verified'
+  ],
+  'Chargesheeted': [
+    'FSL (Forensic Science Lab) reports attached',
+    'Draft chargesheet reviewed by Legal Advisor',
+    'Formal chargesheet filed in Magistrate Court'
+  ],
+  'Trial Stage': [
+    'Summons served to witnesses',
+    'Prosecution testimonies completed',
+    'Defense arguments heard'
+  ],
+  'Closed': [
+    'Final court order retrieved & uploaded',
+    'Case disposition recorded in CCTNS ledger'
+  ]
+};
+
+const normalizeStatus = (status: string) => {
+  if (status === 'Closed' || status === 'Acquitted') return 'Closed';
+  if (status === 'Trial Stage' || status === 'Trial') return 'Trial Stage';
+  if (status === 'Chargesheeted') return 'Chargesheeted';
+  if (status === 'Under Investigation') return 'Under Investigation';
+  return 'Filed';
+};
 
 export default function InvestigatorPage() {
   const [searchQ, setSearchQ] = useState('');
@@ -31,6 +68,38 @@ export default function InvestigatorPage() {
   const [loadingSearch, setLoadingSearch] = useState(false);
   const [loadingSummary, setLoadingSummary] = useState(false);
   const [loadingTimeline, setLoadingTimeline] = useState(false);
+  const [checkedTasks, setCheckedTasks] = useState<Record<number, Record<string, boolean>>>({});
+
+  const toggleTask = (caseId: number, taskName: string) => {
+    setCheckedTasks(prev => {
+      const caseTasks = prev[caseId] || {};
+      const newCaseTasks = { ...caseTasks, [taskName]: !caseTasks[taskName] };
+      return { ...prev, [caseId]: newCaseTasks };
+    });
+  };
+
+  const updateCaseStatus = async (newStatus: string) => {
+    if (!selectedCase) return;
+    try {
+      const res = await fetchAuth(`/investigator/crimes/${selectedCase.id}/update-status`, {
+        method: 'POST',
+        body: JSON.stringify({ status: newStatus })
+      });
+      if (res && res.status) {
+        setCaseSummary((prev: any) => prev ? { ...prev, status: newStatus } : null);
+        setSelectedCase((prev: any) => prev ? { ...prev, status: newStatus } : null);
+        setSearchResults((prev: any[]) => prev.map(c => c.id === selectedCase.id ? { ...c, status: newStatus } : c));
+      }
+    } catch (e) {
+      console.error("Failed to update status:", e);
+    }
+  };
+
+  const currentStage = caseSummary ? normalizeStatus(caseSummary.status) : 'Filed';
+  const stageTasksList = STAGE_TASKS[currentStage] || [];
+  const caseChecked = checkedTasks[selectedCase?.id || 0] || {};
+  const completedCount = stageTasksList.filter(t => caseChecked[t]).length;
+  const totalTasks = stageTasksList.length;
 
   const doSearch = async () => {
     if (!searchQ.trim()) return;
@@ -208,6 +277,76 @@ export default function InvestigatorPage() {
                       ))}
                     </div>
                   )}
+
+                  {/* Case Workflow Stepper */}
+                  <div style={{ marginTop:16, borderTop:'1px solid var(--border)', paddingTop:16, marginBottom:16 }}>
+                    <div style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.5px', color:'var(--text-muted)', marginBottom:12 }}>
+                      Case Progression Workflow
+                    </div>
+                    
+                    <div style={{ display:'flex', justifyContent:'space-between', position:'relative', marginBottom:20 }}>
+                      <div style={{ position:'absolute', top:10, left:10, right:10, height:2, background:'rgba(255,255,255,0.05)', zIndex:1 }} />
+                      <div style={{
+                        position:'absolute', top:10, left:10,
+                        width:`${(STAGES.indexOf(currentStage) / (STAGES.length - 1)) * 90}%`,
+                        height:2, background:'var(--accent-light)', zIndex:1, transition:'width 0.3s ease'
+                      }} />
+
+                      {STAGES.map((st, idx) => {
+                        const isPast = STAGES.indexOf(currentStage) >= idx;
+                        const isActive = currentStage === st;
+                        return (
+                          <div key={st} style={{ zIndex:2, display:'flex', flexDirection:'column', alignItems:'center', cursor:'pointer' }}
+                               onClick={() => updateCaseStatus(st)}>
+                            <div style={{
+                              width:20, height:20, borderRadius:'50%',
+                              background: isActive ? 'var(--accent)' : isPast ? 'var(--accent-light)' : 'var(--bg-secondary)',
+                              border:`2px solid ${isActive || isPast ? 'var(--accent-light)' : 'rgba(255,255,255,0.2)'}`,
+                              display:'flex', alignItems:'center', justifyContent:'center', fontSize:9, fontWeight:700,
+                              color: isActive || isPast ? '#fff' : 'var(--text-muted)', transition:'all 0.2s'
+                            }}>
+                              {idx + 1}
+                            </div>
+                            <span style={{ fontSize:8, marginTop:4, color: isActive ? 'var(--text-primary)' : 'var(--text-muted)', fontWeight: isActive ? 700 : 500, whiteSpace:'nowrap' }}>
+                              {st === 'Under Investigation' ? 'Investigating' : st === 'Trial Stage' ? 'Trial' : st}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {currentStage && (
+                      <div style={{ background:'rgba(255,255,255,0.02)', border:'1px solid var(--border)', borderRadius:8, padding:12, marginBottom:12 }}>
+                        <div style={{ fontSize:11, fontWeight:600, color:'var(--text-secondary)', marginBottom:8, display:'flex', justifyContent:'space-between' }}>
+                          <span>📋 Stage Checklist: {currentStage}</span>
+                          <span style={{ fontSize:10, color:'var(--text-muted)' }}>
+                            {completedCount}/{totalTasks} tasks
+                          </span>
+                        </div>
+                        {stageTasksList.map((task: string) => {
+                          const isChecked = caseChecked[task] || false;
+                          return (
+                            <label key={task} style={{ display:'flex', alignItems:'center', gap:8, fontSize:11, color:'var(--text-secondary)', marginBottom:6, cursor:'pointer' }}>
+                              <input type="checkbox" checked={isChecked} onChange={() => toggleTask(selectedCase.id, task)} style={{ accentColor:'var(--accent)' }} />
+                              <span style={{ textDecoration: isChecked ? 'line-through' : 'none', opacity: isChecked ? 0.6 : 1 }}>
+                                {task}
+                              </span>
+                            </label>
+                          );
+                        })}
+                        
+                        {completedCount === totalTasks && STAGES.indexOf(currentStage) < STAGES.length - 1 && (
+                          <button className="btn btn-ghost" style={{ width:'100%', marginTop:8, fontSize:10, color:'var(--success)', border:'1px dashed var(--success)', padding:'6px', borderRadius:6, textTransform:'uppercase', fontWeight:600 }}
+                                  onClick={() => {
+                                    const nextSt = STAGES[STAGES.indexOf(currentStage) + 1];
+                                    updateCaseStatus(nextSt);
+                                  }}>
+                            ✅ Complete Stage & Proceed to {STAGES[STAGES.indexOf(currentStage) + 1]}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
 
                   {/* Generate Leads Button */}
                   <button className="btn btn-primary" style={{ width:'100%', marginBottom:12 }} onClick={generateLeads}>

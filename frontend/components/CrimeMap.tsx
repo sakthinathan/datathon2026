@@ -5,6 +5,7 @@ interface Props {
   heatmapData: any[];
   districtData: any[];
   stations: any[];
+  mapMode?: 'historical' | 'predictive';
 }
 
 const DISTRICT_COORDS: Record<string, [number, number]> = {
@@ -41,7 +42,7 @@ const DISTRICT_COORDS: Record<string, [number, number]> = {
   "Koppal": [15.3508, 76.1549],
 };
 
-export default function CrimeMap({ heatmapData, districtData, stations }: Props) {
+export default function CrimeMap({ heatmapData, districtData, stations, mapMode = 'historical' }: Props) {
   const mapRef = useRef<any>(null);
   const containerId = 'crime-map-container';
 
@@ -79,13 +80,23 @@ export default function CrimeMap({ heatmapData, districtData, stations }: Props)
           opacity: 0.8,
         }).addTo(map);
 
-        circle.bindPopup(`
+        const popupContent = mapMode === 'predictive' ? `
+          <div style="font-family:Inter,sans-serif;min-width:180px">
+            <div style="font-weight:700;font-size:14px;margin-bottom:6px">🔮 ${d.district} (Forecast)</div>
+            <div style="color:#6b7280;font-size:12px">Predicted Volume: <strong style="color:${color}">${d.total?.toLocaleString()}</strong></div>
+            <div style="color:#6b7280;font-size:12px">Confidence: <strong>${Math.round((d.confidence || 0.8) * 100)}%</strong></div>
+            <div style="color:#6b7280;font-size:12px">Trend: <strong style="color:${d.trend === 'Rising' ? '#ef4444' : '#22c55e'}">${d.trend || 'Stable'}</strong></div>
+            <div style="color:#6b7280;font-size:12px">ML Model: <strong>${d.model || 'Ridge'}</strong></div>
+          </div>
+        ` : `
           <div style="font-family:Inter,sans-serif;min-width:180px">
             <div style="font-weight:700;font-size:14px;margin-bottom:6px">${d.district}</div>
             <div style="color:#6b7280;font-size:12px">Total Crimes: <strong style="color:${color}">${d.total?.toLocaleString()}</strong></div>
             <div style="color:#6b7280;font-size:12px">Severity: ${ratio > 0.7 ? '🔴 High' : ratio > 0.4 ? '🟡 Medium' : '🟢 Low'}</div>
           </div>
-        `, { className: 'dark-popup' });
+        `;
+
+        circle.bindPopup(popupContent, { className: 'dark-popup' });
 
         const icon = L.divIcon({
           html: `<div style="font-size:11px;font-weight:700;color:white;background:${color};padding:2px 6px;border-radius:6px;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.5)">${d.district.split(' ')[0]}</div>`,
@@ -109,13 +120,14 @@ export default function CrimeMap({ heatmapData, districtData, stations }: Props)
       const legend = (L.control as any)({ position: 'bottomleft' });
       legend.onAdd = () => {
         const div = L.DomUtil.create('div');
+        const title = mapMode === 'predictive' ? 'Forecasted Severity' : 'Crime Intensity';
         div.innerHTML = `
           <div style="background:rgba(5,9,20,0.9);padding:12px 16px;border-radius:12px;border:1px solid rgba(99,102,241,0.3);font-family:Inter,sans-serif;font-size:12px;color:#f1f5f9">
-            <div style="font-weight:700;margin-bottom:8px;color:#818cf8">Crime Intensity</div>
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><div style="width:12px;height:12px;border-radius:50%;background:#ef4444"></div>High</div>
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><div style="width:12px;height:12px;border-radius:50%;background:#f59e0b"></div>Medium</div>
+            <div style="font-weight:700;margin-bottom:8px;color:#818cf8">${title}</div>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><div style="width:12px;height:12px;border-radius:50%;background:#ef4444"></div>High / Critical</div>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><div style="width:12px;height:12px;border-radius:50%;background:#f59e0b"></div>Medium / Warning</div>
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><div style="width:12px;height:12px;border-radius:50%;background:#6366f1"></div>Low-Medium</div>
-            <div style="display:flex;align-items:center;gap:8px"><div style="width:12px;height:12px;border-radius:50%;background:#22c55e"></div>Low</div>
+            <div style="display:flex;align-items:center;gap:8px"><div style="width:12px;height:12px;border-radius:50%;background:#22c55e"></div>Low / Normal</div>
           </div>`;
         return div;
       };

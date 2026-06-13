@@ -17,6 +17,7 @@ const NAV_ITEMS = [
   { href: '/dashboard/sociology',    icon: '🧬', label: 'Sociological Insights',section: 'Analysis' },
   { href: '/dashboard/users',        icon: '👥', label: 'User Management',     section: 'System' },
   { href: '/dashboard/audit',        icon: '📋', label: 'Audit Trail',         section: 'System' },
+  { href: '/dashboard/architecture', icon: '📚', label: 'Architecture & Q&A', section: 'System' },
 ];
 
 const ROLE_NAV_RULES: { [key: string]: string[] } = {
@@ -32,6 +33,7 @@ const ROLE_NAV_RULES: { [key: string]: string[] } = {
   '/dashboard/sociology':    ['super_admin', 'district_sp', 'analyst', 'readonly'],
   '/dashboard/users':        ['super_admin'],
   '/dashboard/audit':        ['super_admin'],
+  '/dashboard/architecture': ['super_admin', 'district_sp', 'investigator', 'analyst', 'readonly'],
 };
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
