@@ -55,8 +55,9 @@ async def send_message(req: ChatRequest, request: Request,
     db.add(user_msg)
     db.commit()
 
-    # Get AI response
-    response = await get_gemini_response(req.message, history, db)
+    # Get AI response — pass explicit language so it's honoured even when user
+    # types English text but has Kannada mode selected via the toggle
+    response = await get_gemini_response(req.message, history, db, req.language or "en")
 
     # Save assistant message
     ai_msg = ChatMessage(session_id=session.id, role="assistant",

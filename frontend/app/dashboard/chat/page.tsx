@@ -145,7 +145,9 @@ export default function ChatPage() {
     setActiveSession(null);
     setMessages([{
       role: 'assistant',
-      content: '🔍 **New Investigation Started**\n\nWhat would you like to investigate?',
+      content: lang === 'kn'
+        ? '🔍 **ಹೊಸ ತನಿಖೆ ಪ್ರಾರಂಭವಾಗಿದೆ**\n\nನೀವು ೆನು ತನಿಖೆ ಮಾಡಲು ಬಯಸುತ್ತೀರಿ?'
+        : '🔍 **New Investigation Started**\n\nWhat would you like to investigate?',
       timestamp: new Date().toISOString(),
     }]);
   };
@@ -229,7 +231,7 @@ export default function ChatPage() {
                             <div style={{ padding:'8px 12px', borderBottom:'1px solid rgba(255,255,255,0.05)', display:'flex', gap:8, alignItems:'center' }}>
                               <span style={{ fontSize:10, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase' }}>Step 1 — Language Detected</span>
                               <span style={{ fontSize:11, padding:'1px 8px', borderRadius:99, background:'rgba(34,197,94,0.15)', color:'var(--success)', fontWeight:600 }}>
-                                {m.language === 'kn' ? '🇮🇳 Kannada' : '🇬🇧 English'}
+                                {m.language === 'kn' ? '🇮🇳 ಕನ್ನಡ' : '🇬🇧 English'}
                               </span>
                             </div>
                             {/* XAI Step 2: SQL */}
@@ -265,7 +267,9 @@ export default function ChatPage() {
                     <div className="typing-dot" />
                     <div className="typing-dot" />
                     <div className="typing-dot" />
-                    <span style={{ marginLeft:8, fontSize:12, color:'var(--text-muted)' }}>Analyzing crime data...</span>
+                    <span style={{ marginLeft:8, fontSize:12, color:'var(--text-muted)' }}>
+                      {lang === 'kn' ? 'ಮಾಹಿತಿ ವಿಶ್ಲೇಷಿಸಲಾಗುತ್ತಿದೆ...' : 'Analyzing crime data...'}
+                    </span>
                   </div>
                 </div>
               </div>

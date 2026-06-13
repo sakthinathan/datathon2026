@@ -6,7 +6,8 @@ from datetime import datetime
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
-SYSTEM_PROMPT = """You are SCRB CrimeBot, an expert AI assistant for the State Crime Records Bureau of Karnataka, India.
+# Base system prompt — language instruction appended dynamically per request
+SYSTEM_PROMPT_BASE = """You are SCRB CrimeBot, an expert AI assistant for the State Crime Records Bureau of Karnataka, India.
 You help police investigators, analysts, and officers query a crime database using natural language.
 
 DATABASE SCHEMA:
@@ -28,13 +29,20 @@ IMPORTANT RULES:
 3. Return your response in JSON format: {"sql": "...", "answer": "...", "insights": ["...", "..."]}
 4. The "answer" should be a clear, professional response using the ACTUAL DATA provided to you.
 5. "insights" should contain 2-3 bullet point observations about the real data.
-6. If the question is in Kannada, respond entirely in Kannada in the "answer" field.
-7. Never expose raw SQL to the user - only include it in the json sql field.
-8. Limit SQL results to 20 rows maximum.
-9. Use COUNT, GROUP BY, ORDER BY for aggregation queries.
-10. Be empathetic and professional - this is law enforcement context.
-11. CRITICAL: Your answer MUST reference the actual data returned. Never give generic responses when real data is available.
+6. Never expose raw SQL to the user - only include it in the json sql field.
+7. Limit SQL results to 20 rows maximum.
+8. Use COUNT, GROUP BY, ORDER BY for aggregation queries.
+9. Be empathetic and professional - this is law enforcement context.
+10. CRITICAL: Your answer MUST reference the actual data returned. Never give generic responses when real data is available.
 """
+
+LANG_INSTRUCTIONS = {
+    "kn": "CRITICAL LANGUAGE RULE: The user has selected Kannada (ಕನ್ನಡ) mode. You MUST write the entire 'answer' field in Kannada script. The 'insights' list must also be in Kannada. Only the 'sql' field stays in English (SQL syntax). Do NOT respond in English.",
+    "en": "LANGUAGE RULE: Respond in clear professional English.",
+}
+
+def build_system_prompt(language: str) -> str:
+    return SYSTEM_PROMPT_BASE + "\n" + LANG_INSTRUCTIONS.get(language, LANG_INSTRUCTIONS["en"])
 
 MOCK_PATTERNS = [
     {
@@ -201,9 +209,10 @@ def extract_fir_number(message: str) -> str | None:
     return None
 
 
-def get_mock_response(user_message: str, db) -> dict:
+def get_mock_response(user_message: str, db, ui_language: str = "en") -> dict:
     msg_lower = user_message.lower()
-    kannada = is_kannada(user_message)
+    # Language = explicit UI toggle OR Unicode script detection (either triggers Kannada mode)
+    kannada = (ui_language == "kn") or is_kannada(user_message)
     language = "kn" if kannada else "en"
 
     # ── Priority 1: FIR number lookup ────────────────────────────────────────
@@ -229,22 +238,37 @@ def get_mock_response(user_message: str, db) -> dict:
                 else:
                     formatted = format_sql_results(rows, columns)
                     answer = f"🔍 **{len(rows)} Matching FIR(s) Found**\n\n{formatted}"
+                status_val = rows[0][9] if len(rows[0]) > 9 else 'N/A'
+                if kannada:
+                    insights = [
+                        f"{len(rows)} ಪ್ರಕರಣ(ಗಳು) ಕಂಡುಬಂದಿವೆ",
+                        f"ಪ್ರಕರಣ ಸ್ಥಿತಿ: {status_val}",
+                        "ಪೂರ್ಣ ತನಿಖಾ ಸಲಹೆಗಳಿಗಾಗಿ ಕೇಸ್ ಇಂಟೆಲಿಜೆನ್ಸ್ ಮಾಡ್ಯೂಲ್ ಬಳಸಿ"
+                    ]
+                else:
+                    insights = [
+                        f"Found {len(rows)} case(s) matching your query",
+                        f"Case status: {status_val}",
+                        "Use Case Intelligence module for full AI-generated lead suggestions"
+                    ]
                 return {
                     "answer": answer,
                     "sql": sql,
-                    "insights": [
-                        f"Found {len(rows)} case(s) matching your query",
-                        f"Case status: {rows[0][9] if len(rows[0]) > 9 else 'N/A'}",
-                        "Use Case Intelligence module for full AI-generated lead suggestions"
-                    ],
+                    "insights": insights,
                     "result_count": len(rows),
                     "language": language
                 }
             else:
+                if kannada:
+                    not_found = f"❌ **FIR ಪ್ರಕರಣ ಕಂಡುಬಂದಿಲ್ಲ** `{fir_num or user_message.strip()}`\n\nದಯವಿಟ್ಟು FIR ಸಂಖ್ಯೆಯ ರೂಪವನ್ನು ಪರಿಶೀಲಿಸಿ (ಉದಾ: `FIR/2024/10001`)."
+                    not_found_insights = ["ಡೇಟಾಬೇಸ್‌ನಲ್ಲಿ ಹೊಂದಾಣಿಕೆ ದಾಖಲೆ ಇಲ್ಲ", "ಭಾಗಶಃ FIR ಸಂಖ್ಯೆ ಬಳಸಿ ಹುಡುಕಲು ಪ್ರಯತ್ನಿಸಿ"]
+                else:
+                    not_found = f"❌ **No case found** for FIR `{fir_num or user_message.strip()}`.\n\nPlease verify the FIR number format (e.g., `FIR/2024/10001`) or try the **Case Intelligence** module."
+                    not_found_insights = ["No matching record in database", "Try using partial FIR numbers for broader search"]
                 return {
-                    "answer": f"❌ **No case found** for FIR `{fir_num or user_message.strip()}`.\n\nPlease verify the FIR number format (e.g., `FIR/2024/10001`) or try the **Case Intelligence** module for a broader search.",
+                    "answer": not_found,
                     "sql": sql,
-                    "insights": ["No matching record in database", "Try using partial FIR numbers for broader search"],
+                    "insights": not_found_insights,
                     "result_count": 0,
                     "language": language
                 }
@@ -252,17 +276,22 @@ def get_mock_response(user_message: str, db) -> dict:
             print(f"FIR lookup error: {e}")
 
     # ── Priority 2: Keyword pattern matching ─────────────────────────────────
-    patterns = KANNADA_PATTERNS if kannada else MOCK_PATTERNS
+    # In Kannada mode: try Kannada keyword patterns first, then English patterns as fallback
+    # (user may click English suggested queries while in Kannada mode)
     matched = None
     best_score = 0
-    for pattern in patterns:
-        score = sum(1 for kw in pattern["keywords"] if kw in (user_message if kannada else msg_lower))
-        if score > best_score:
-            best_score = score
-            matched = pattern
+    search_pools = [KANNADA_PATTERNS, MOCK_PATTERNS] if kannada else [MOCK_PATTERNS]
+    for pool in search_pools:
+        for pattern in pool:
+            score = sum(1 for kw in pattern["keywords"] if kw.lower() in msg_lower)
+            if score > best_score:
+                best_score = score
+                matched = pattern
+        if matched and best_score > 0:
+            break  # Found a match in the preferred pool
 
     if not matched or best_score == 0:
-        matched = MOCK_PATTERNS[1]  # Default to top districts (not FIR lookup pattern)
+        matched = MOCK_PATTERNS[1]  # Default to top districts
 
     try:
         sql = matched.get("sql", "")
@@ -271,11 +300,19 @@ def get_mock_response(user_message: str, db) -> dict:
         rows = result.fetchall()
         formatted = format_sql_results(rows, columns)
         answer = matched["template"].format(data=formatted)
-        insights = [
-            f"Query returned {len(rows)} records from the database",
-            "Data sourced from 1100+ police stations across Karnataka",
-            "Analysis based on historical records from 2018-2024"
-        ]
+        # Translate standard insights to Kannada when in Kannada mode
+        if kannada:
+            insights = [
+                f"ಡೇಟಾಬೇಸ್‌ನಿಂದ {len(rows)} ದಾಖಲೆಗಳು ಕಂಡುಬಂದಿವೆ",
+                "ಕರ್ನಾಟಕದ 1100+ ಪೊಲೀಸ್ ಠಾಣೆಗಳ ಮಾಹಿತಿ ಆಧಾರಿತ",
+                "2018-2024 ಐತಿಹಾಸಿಕ ದಾಖಲೆಗಳ ವಿಶ್ಲೇಷಣೆ"
+            ]
+        else:
+            insights = [
+                f"Query returned {len(rows)} records from the database",
+                "Data sourced from 1100+ police stations across Karnataka",
+                "Analysis based on historical records from 2018-2024"
+            ]
         return {
             "answer": answer,
             "sql": sql,
@@ -285,23 +322,25 @@ def get_mock_response(user_message: str, db) -> dict:
         }
     except Exception as e:
         print(f"Mock response error: {e}")
+        err_msg = "ನಿಮ್ಮ ಪ್ರಶ್ನೆ ಸಂಸ್ಕರಿಸಲು ದೋಷ ಉಂಟಾಗಿದೆ. ದಯವಿಟ್ಟು ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ." if kannada else "I encountered an error processing your query. Please try rephrasing."
         return {
-            "answer": "I encountered an error processing your query. Please try rephrasing.",
+            "answer": err_msg,
             "sql": "",
             "insights": [],
             "result_count": 0,
-            "language": "en"
+            "language": language
         }
 
 
-async def get_gemini_response(user_message: str, conversation_history: list, db) -> dict:
-    language = "kn" if is_kannada(user_message) else "en"
+async def get_gemini_response(user_message: str, conversation_history: list, db, ui_language: str = "en") -> dict:
+    # Honour explicit UI toggle first; Unicode detection is secondary fallback
+    language = "kn" if (ui_language == "kn" or is_kannada(user_message)) else "en"
 
     # Always try FIR lookup first for specific queries (even with Gemini active)
     fir_num = extract_fir_number(user_message)
 
     if not GEMINI_API_KEY or GEMINI_API_KEY == "TEST_DISABLED":
-        return get_mock_response(user_message, db)
+        return get_mock_response(user_message, db, ui_language)
 
     try:
         # Pre-fetch real data for specific lookups so Gemini can reference actual records
@@ -322,7 +361,9 @@ async def get_gemini_response(user_message: str, conversation_history: list, db)
                 print(f"Pre-fetch error: {e}")
 
         history_text = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in conversation_history[-8:]])
-        prompt = f"{SYSTEM_PROMPT}\n\nCONVERSATION HISTORY:\n{history_text}{pre_fetched_data}\n\nUSER: {user_message}\n\nRespond with ONLY a valid JSON object (no markdown, no code fences)."
+        # Use language-aware system prompt so Gemini always replies in correct language
+        system_prompt = build_system_prompt(language)
+        prompt = f"{system_prompt}\n\nCONVERSATION HISTORY:\n{history_text}{pre_fetched_data}\n\nUSER: {user_message}\n\nRespond with ONLY a valid JSON object (no markdown, no code fences)."
 
         url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
@@ -373,4 +414,4 @@ async def get_gemini_response(user_message: str, conversation_history: list, db)
 
     except Exception as e:
         print(f"Gemini exception: {e}")
-        return get_mock_response(user_message, db)
+        return get_mock_response(user_message, db, ui_language)
