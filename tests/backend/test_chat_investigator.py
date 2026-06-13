@@ -222,3 +222,162 @@ class TestInvestigatorModule:
         assert r.status_code == 200
         # Should return empty list, not throw an error
         assert isinstance(r.json(), list)
+
+
+from unittest.mock import AsyncMock, patch
+from services.llm_service import get_gemini_response
+import httpx
+
+@pytest.mark.asyncio
+class TestGeminiService:
+    """TC-GEMINI-01x: Gemini two-stage RAG agent tests"""
+
+    async def test_gemini_successful_flow(self, db_session):
+        """Verify successful two-stage RAG flow: SQL gen -> SQL run -> Answer synthesis"""
+        with patch("services.llm_service.GEMINI_API_KEY", "MOCK_KEY_PRESENT"):
+            mock_client = AsyncMock()
+            
+            response_sql = httpx.Response(
+                status_code=200,
+                json={
+                    "candidates": [
+                        {
+                            "content": {
+                                "parts": [
+                                    {
+                                        "text": '{"sql": "SELECT COUNT(*) as cnt FROM crimes"}'
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            )
+            
+            response_synth = httpx.Response(
+                status_code=200,
+                json={
+                    "candidates": [
+                        {
+                            "content": {
+                                "parts": [
+                                    {
+                                        "text": '{"answer": "There are 50 crimes in total.", "insights": ["Crime rate is stable", "Patrolling is working"]}'
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            )
+            
+            mock_client.post.side_effect = [response_sql, response_synth]
+            
+            with patch("services.llm_service.get_httpx_client", return_value=mock_client):
+                result = await get_gemini_response(
+                    user_message="How many crimes in total?",
+                    conversation_history=[],
+                    db=db_session,
+                    ui_language="en"
+                )
+                
+                assert result["answer"] == "There are 50 crimes in total."
+                assert "sql" in result
+                assert "SELECT COUNT(*)" in result["sql"]
+                assert result["insights"] == ["Crime rate is stable", "Patrolling is working"]
+                assert result["result_count"] == 1
+
+    async def test_gemini_sql_self_healing_retry(self, db_session):
+        """Verify that when a SQL error occurs, the self-healing loop retries and succeeds"""
+        with patch("services.llm_service.GEMINI_API_KEY", "MOCK_KEY_PRESENT"):
+            mock_client = AsyncMock()
+            
+            # Attempt 0 fails DB execution because of invalid SQL
+            response_bad_sql = httpx.Response(
+                status_code=200,
+                json={
+                    "candidates": [
+                        {
+                            "content": {
+                                "parts": [
+                                    {
+                                        "text": '{"sql": "SELECT non_existent_column FROM crimes"}'
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            )
+            
+            # Attempt 1 succeeds DB execution
+            response_good_sql = httpx.Response(
+                status_code=200,
+                json={
+                    "candidates": [
+                        {
+                            "content": {
+                                "parts": [
+                                    {
+                                        "text": '{"sql": "SELECT COUNT(*) as cnt FROM crimes"}'
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            )
+            
+            # Response for answer synthesis
+            response_synth = httpx.Response(
+                status_code=200,
+                json={
+                    "candidates": [
+                        {
+                            "content": {
+                                "parts": [
+                                    {
+                                        "text": '{"answer": "Total crimes: 50", "insights": ["No bad column error"]}'
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            )
+            
+            mock_client.post.side_effect = [response_bad_sql, response_good_sql, response_synth]
+            
+            with patch("services.llm_service.get_httpx_client", return_value=mock_client):
+                result = await get_gemini_response(
+                    user_message="Total crimes",
+                    conversation_history=[],
+                    db=db_session,
+                    ui_language="en"
+                )
+                
+                assert result["answer"] == "Total crimes: 50"
+                assert "SELECT COUNT(*)" in result["sql"]
+                assert result["result_count"] == 1
+
+    async def test_mock_fallback_suspect_search(self, db_session):
+        """Verify get_mock_response falls back to dynamic suspect database search when no keywords match"""
+        from services.llm_service import get_mock_response
+        result = get_mock_response("tell me about Test Suspect 1", db_session, "en")
+        assert "Test Suspect 1" in result["answer"]
+        assert "Suspect Profile" in result["answer"]
+        assert "risk_level" in result["sql"]
+        assert result["result_count"] > 0
+
+    async def test_mock_fallback_crime_search(self, db_session):
+        """Verify get_mock_response falls back to dynamic crime database search when no keywords match"""
+        from services.llm_service import get_mock_response
+        result = get_mock_response("show case with incident 12 description", db_session, "en")
+        assert "incident 12 description" in result["answer"]
+        assert "Matching Cases Found" in result["answer"]
+        assert "police_station" in result["sql"]
+        assert result["result_count"] > 0
+
+
+
+

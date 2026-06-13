@@ -14,35 +14,43 @@ def get_httpx_client() -> httpx.AsyncClient:
         _httpx_client = httpx.AsyncClient(timeout=30.0)
     return _httpx_client
 
-# Base system prompt — language instruction appended dynamically per request
+# Base system prompts for RAG Agent
 SYSTEM_PROMPT_BASE = """You are SCRB CrimeBot, an expert AI assistant for the State Crime Records Bureau of Karnataka, India.
 You help police investigators, analysts, and officers query a crime database using natural language.
+"""
 
+SQL_GENERATION_PROMPT = """You are SCRB CrimeBot, a translation assistant that converts natural language queries into valid SQLite queries.
 DATABASE SCHEMA:
 - crimes(id, fir_number, date, time, year, month, district, taluk, police_station, crime_type, ipc_section, severity, status, latitude, longitude, description, victim_count, accused_count, property_value)
 - suspects(id, name, alias, age, gender, district, occupation, crime_history, connections, risk_level)
 - police_stations(id, name, district, taluk, officer_count, cases_filed, cases_solved)
 - predictions(id, district, crime_type, predicted_month, predicted_count, confidence, severity, trend)
 
-DISTRICTS: Bengaluru Urban, Mysuru, Hubballi-Dharwad, Mangaluru, Belagavi, Kalaburagi, Ballari, Vijayapura, Shivamogga, Tumakuru, Raichur, Bidar, Yadgir, Dharwad, Gadag, Haveri, Uttara Kannada, Dakshina Kannada, Udupi, Chikkamagaluru, Hassan, Kodagu, Mandya, Chamarajanagar, Ramanagara, Chikkaballapur, Kolar, Bengaluru Rural, Chitradurga, Davanagere, Koppal
-
-CRIME TYPES: Murder, Attempt to Murder, Robbery, Theft, Burglary, Cybercrime, Assault, Fraud, Drug Offense, Kidnapping, POCSO, Domestic Violence, Rape, Extortion, Chain Snatching, Vehicle Theft, Hit and Run, Cheating, Arson, Rioting
-
-SEVERITY LEVELS: Low, Medium, High, Critical
-CASE STATUS: Filed, Under Investigation, Chargesheeted, Closed, Acquitted
-
-IMPORTANT RULES:
-1. Always generate a SQLite-compatible SQL query to answer the question.
-2. For FIR number queries use: WHERE fir_number = 'FIR/YYYY/NNNNN' or WHERE fir_number LIKE '%search%'
-3. Return your response in JSON format: {"sql": "...", "answer": "...", "insights": ["...", "..."]}
-4. The "answer" should be a clear, professional response using the ACTUAL DATA provided to you.
-5. "insights" should contain 2-3 bullet point observations about the real data.
-6. Never expose raw SQL to the user - only include it in the json sql field.
-7. Limit SQL results to 20 rows maximum.
-8. Use COUNT, GROUP BY, ORDER BY for aggregation queries.
-9. Be empathetic and professional - this is law enforcement context.
-10. CRITICAL: Your answer MUST reference the actual data returned. Never give generic responses when real data is available.
+IMPORTANT SQL RULES:
+1. Generate ONLY a single SQLite-compatible SELECT statement to answer the question.
+2. For FIR searches, use: fir_number = 'FIR/YYYY/NNNNN' or fir_number LIKE '%search%'
+3. To find crimes/offenses committed by a suspect, join crimes and suspects. Since suspects.crime_history is a comma-separated string of crime IDs, you can join using:
+   SELECT c.* FROM crimes c JOIN suspects s ON (',' || s.crime_history || ',') LIKE ('%,' || c.id || ',%') WHERE s.name LIKE '%suspect_name%'
+4. Limit SQL results to 20 rows maximum.
+5. If the user question does not require a database query (e.g. greetings, generic questions, help requests), output an empty string for the sql query.
+6. Return your response in JSON format with ONLY the "sql" field: {"sql": "SELECT ..."} or {"sql": ""} if no DB lookup is needed. Do not wrap in markdown or code fences.
 """
+
+ANSWER_SYNTHESIS_PROMPT = """You are SCRB CrimeBot, an expert AI assistant for the State Crime Records Bureau of Karnataka, India.
+Your task is to synthesize a professional response to the user's question using the actual data retrieved from the database.
+
+IMPORTANT SYNTHESIS RULES:
+1. Base your answer strictly on the actual database results provided to you. If no data was found, state that clearly.
+2. Translate and write the response in the specified language (English or Kannada).
+3. Do NOT mention any SQL queries, columns, or database technicalities in your final answer.
+4. Return your response in JSON format: {"answer": "...", "insights": ["...", "..."]}
+5. "insights" should contain 2-3 brief observations or recommendations based on the data.
+"""
+
+LANG_INSTRUCTIONS = {
+    "kn": "CRITICAL LANGUAGE RULE: The user has selected Kannada (ಕನ್ನಡ) mode. You MUST write the entire 'answer' field in Kannada script. The 'insights' list must also be in Kannada. Do NOT respond in English.",
+    "en": "LANGUAGE RULE: Respond in clear professional English.",
+}
 
 LANG_INSTRUCTIONS = {
     "kn": "CRITICAL LANGUAGE RULE: The user has selected Kannada (ಕನ್ನಡ) mode. You MUST write the entire 'answer' field in Kannada script. The 'insights' list must also be in Kannada. Only the 'sql' field stays in English (SQL syntax). Do NOT respond in English.",
@@ -283,6 +291,87 @@ def get_mock_response(user_message: str, db, ui_language: str = "en") -> dict:
         except Exception as e:
             print(f"FIR lookup error: {e}")
 
+    # ── Priority 1.5: Database-backed Suspect Name Search ─────────────────────
+    words = [w.strip("?,.!-()\"'") for w in user_message.split() if len(w) >= 2]
+    stop_words = {
+        "tell", "about", "show", "who", "what", "where", "how", "many", "committed", 
+        "suspect", "accused", "criminal", "cases", "crimes", "district", "station", 
+        "police", "info", "details", "profile", "search", "find", "case", "with", 
+        "for", "the", "and", "under", "incident", "description", "here", "are", 
+        "any", "get", "view", "list", "name", "me", "my", "him", "her", "his", 
+        "them", "their", "they", "you", "your", "we", "us", "our", "is", "am", 
+        "was", "were", "be", "been", "being", "have", "has", "had", "do", "does", 
+        "did", "a", "an", "in", "on", "at", "to", "from", "by", "of", "please", 
+        "give", "information", "record", "records", "ಬಗ್ಗೆ", "ಹೇಳಿ", "ಮಾಹಿತಿ", 
+        "ನನಗೆ", "ತೋರಿಸಿ", "ತಿಳಿಸಿ", "ಯಾರು", "ಏನು", "ಎಲ್ಲಿ", "ಹೇಗೆ"
+    }
+    search_terms = [w for w in words if w.lower() not in stop_words]
+
+    
+    is_crime_query = any(k in msg_lower for k in ["crime", "case", "fir", "incident", "offense", "occurrence", "ಪ್ರಕರಣ"])
+    
+    if search_terms and not is_crime_query:
+        try:
+            # Check if all search terms are present in name/alias/district/occupation
+            like_clauses = " AND ".join([f"LOWER(name || ' ' || alias || ' ' || district || ' ' || occupation) LIKE :term_{i}" for i in range(len(search_terms))])
+            sql_suspects = f"SELECT id, name, alias, age, gender, district, occupation, risk_level, crime_history FROM suspects WHERE {like_clauses} LIMIT 5"
+            params = {f"term_{i}": f"%{term.lower()}%" for i, term in enumerate(search_terms)}
+            
+            res = db.execute(text(sql_suspects), params)
+            suspect_rows = res.fetchall()
+            
+            if suspect_rows:
+                lines = []
+                for row in suspect_rows:
+                    s_id, s_name, s_alias, s_age, s_gender, s_dist, s_occ, s_risk, s_history = row
+                    if kannada:
+                        lines.append(f"🕵️ **ಶಂಕಿತರ ಪ್ರೊಫೈಲ್: {s_name} ({s_alias})**")
+                        lines.append(f"• **ವಯಸ್ಸು/ಲಿಂಗ:** {s_age} / {s_gender}")
+                        lines.append(f"• **ಜಿಲ್ಲೆ:** {s_dist}")
+                        lines.append(f"• **ಉದ್ಯೋಗ:** {s_occ}")
+                        lines.append(f"• **ಅಪಾಯದ ಮಟ್ಟ:** {s_risk}")
+                    else:
+                        lines.append(f"🕵️ **Suspect Profile: {s_name} ({s_alias})**")
+                        lines.append(f"• **Age/Gender:** {s_age} / {s_gender}")
+                        lines.append(f"• **District:** {s_dist}")
+                        lines.append(f"• **Occupation:** {s_occ}")
+                        lines.append(f"• **Risk Level:** {s_risk}")
+                    
+                    if s_history:
+                        crime_ids = [c.strip() for c in s_history.split(",") if c.strip()]
+                        if crime_ids:
+                            in_clause = ",".join([f":c_{j}" for j in range(len(crime_ids))])
+                            crime_params = {f"c_{j}": cid for j, cid in enumerate(crime_ids)}
+                            sql_crimes = f"SELECT fir_number, crime_type, status, date FROM crimes WHERE id IN ({in_clause}) LIMIT 5"
+                            cr_res = db.execute(text(sql_crimes), crime_params)
+                            cr_rows = cr_res.fetchall()
+                            if cr_rows:
+                                if kannada:
+                                    lines.append("• **ಸಂಬಂಧಿತ ಆಪರಾಧಗಳು:**")
+                                    for cr in cr_rows:
+                                        lines.append(f"  - `{cr[0]}`: {cr[1]} ({cr[2]} ರಂದು {cr[3]})")
+                                else:
+                                    lines.append("• **Associated Crimes / Offenses:**")
+                                    for cr in cr_rows:
+                                        lines.append(f"  - `{cr[0]}`: {cr[1]} ({cr[2]} on {cr[3]})")
+                    lines.append("")
+                
+                answer = "\n".join(lines)
+                insights = [
+                    f"ಡೇಟಾಬೇಸ್‌ನಿಂದ {len(suspect_rows)} ಶಂಕಿತರ ವಿವರಗಳು ಲಭ್ಯವಾಗಿವೆ" if kannada else f"Found {len(suspect_rows)} suspect(s) matching '{' '.join(search_terms)}'",
+                    "ಪೊಲೀಸ್ ಇಂಟೆಲಿಜೆನ್ಸ್ ಸಿಸ್ಟಮ್ ಆಧರಿತ ಮಾಹಿತಿ" if kannada else "Suspect details retrieved from active police database",
+                    "ಸಂಬಂಧಿತ ಅಪರಾಧ ಇತಿಹಾಸದಿಂದ ಸಂಗ್ರಹಿಸಲಾಗಿದೆ" if kannada else "Cross-referenced crimes from associated crime history"
+                ]
+                return {
+                    "answer": answer,
+                    "sql": sql_suspects,
+                    "insights": insights,
+                    "result_count": len(suspect_rows),
+                    "language": language
+                }
+        except Exception as search_err:
+            print(f"Priority 1.5 suspect search error: {search_err}")
+
     # ── Priority 2: Keyword pattern matching ─────────────────────────────────
     # In Kannada mode: try Kannada keyword patterns first, then English patterns as fallback
     # (user may click English suggested queries while in Kannada mode)
@@ -298,7 +387,45 @@ def get_mock_response(user_message: str, db, ui_language: str = "en") -> dict:
         if matched and best_score > 0:
             break  # Found a match in the preferred pool
 
+    # ── Priority 3: Final Fallback to Crime Search or Defaults ───────────────
     if not matched or best_score == 0:
+        if search_terms:
+            try:
+                # Search crimes table using AND logic for all terms
+                like_clauses_crimes = " AND ".join([f"LOWER(crime_type || ' ' || district || ' ' || police_station || ' ' || description || ' ' || taluk) LIKE :term_{i}" for i in range(len(search_terms))])
+                sql_crimes = f"SELECT fir_number, date, time, district, taluk, police_station, crime_type, ipc_section, severity, status, description FROM crimes WHERE {like_clauses_crimes} LIMIT 5"
+                params = {f"term_{i}": f"%{term.lower()}%" for i, term in enumerate(search_terms)}
+                res_cr = db.execute(text(sql_crimes), params)
+                crime_rows = res_cr.fetchall()
+                if crime_rows:
+                    lines = []
+                    for cr in crime_rows:
+                        if kannada:
+                            lines.append(f"📁 **FIR:** `{cr[0]}` | **ಪ್ರಕಾರ:** {cr[6]} | **ಗಂಭೀರತೆ:** {cr[8]} | **ಸ್ಥಿತಿ:** {cr[9]}")
+                            lines.append(f"• **ದಿನಾಂಕ:** {cr[1]} {cr[2]} | **ಸ್ಥಳ:** {cr[3]} ({cr[4]} -> {cr[5]})")
+                            lines.append(f"• **ವಿವರಗಳು:** {cr[10]}")
+                        else:
+                            lines.append(f"📁 **FIR:** `{cr[0]}` | **Type:** {cr[6]} | **Severity:** {cr[8]} | **Status:** {cr[9]}")
+                            lines.append(f"• **Date:** {cr[1]} {cr[2]} | **Location:** {cr[3]} ({cr[4]} -> {cr[5]})")
+                            lines.append(f"• **Details:** {cr[10]}")
+                        lines.append("")
+                    
+                    answer = (f"🔍 **ಹೊಂದಾಣಿಕೆಯಾಗುವ ಪ್ರಕರಣಗಳು ಕಂಡುಬಂದಿವೆ**\n\n" if kannada else f"🔍 **Matching Cases Found**\n\n") + "\n".join(lines)
+                    insights = [
+                        f"ಒಟ್ಟು {len(crime_rows)} ಪ್ರಕರಣಗಳು ಹೊಂದಾಣಿಕೆಯಾಗಿವೆ" if kannada else f"Found {len(crime_rows)} crime case(s) matching '{' '.join(search_terms)}'",
+                        "ರಾಜ್ಯ ಅಪರಾಧ ದಾಖಲೆಗಳ ಡೇಟಾಬೇಸ್‌ನಿಂದ ಪಡೆಯಲಾಗಿದೆ" if kannada else "Sourced from the state crime record database",
+                        "ಪ್ರಕರಣದ ನವೀಕರಣಕ್ಕೆ ಪ್ರಕರಣ ತನಿಖೆ ಮಾಡ್ಯೂಲ್ ಬಳಸಿ" if kannada else "Use the Case Intelligence stepper to update case status"
+                    ]
+                    return {
+                        "answer": answer,
+                        "sql": sql_crimes,
+                        "insights": insights,
+                        "result_count": len(crime_rows),
+                        "language": language
+                    }
+            except Exception as search_err:
+                print(f"Dynamic fallback crime search error: {search_err}")
+
         matched = MOCK_PATTERNS[1]  # Default to top districts
 
     try:
@@ -341,104 +468,125 @@ def get_mock_response(user_message: str, db, ui_language: str = "en") -> dict:
 
 
 async def get_gemini_response(user_message: str, conversation_history: list, db, ui_language: str = "en") -> dict:
-    # Honour explicit UI toggle first; Unicode detection is secondary fallback
     language = "kn" if (ui_language == "kn" or is_kannada(user_message)) else "en"
-
-    # Always try FIR lookup first for specific queries (even with Gemini active)
     fir_num = extract_fir_number(user_message)
 
     if not GEMINI_API_KEY or GEMINI_API_KEY == "TEST_DISABLED":
         return get_mock_response(user_message, db, ui_language)
 
+    # 1. Step 1: SQL Generation Loop (or direct FIR lookup)
     max_retries = 3
     attempt = 0
     feedback_msg = ""
     history_text = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in conversation_history[-8:]])
-    system_prompt = build_system_prompt(language)
+    client = get_httpx_client()
 
-    pre_fetched_data = ""
-    pre_sql = ""
-    pre_rows = None
-    pre_cols = None
+    sql_query = ""
+    sql_results = []
+    sql_cols = []
+    sql_err_occurred = False
 
     if fir_num:
-        pre_sql = f"SELECT fir_number, date, time, district, taluk, police_station, crime_type, ipc_section, severity, status, description, victim_count, accused_count, property_value FROM crimes WHERE UPPER(fir_number) = '{fir_num}' LIMIT 1"
+        sql_query = f"SELECT fir_number, date, time, district, taluk, police_station, crime_type, ipc_section, severity, status, description, victim_count, accused_count, property_value FROM crimes WHERE UPPER(fir_number) = '{fir_num}' LIMIT 1"
         try:
-            pre_result = db.execute(text(pre_sql))
-            pre_cols = list(pre_result.keys())
-            pre_rows = pre_result.fetchall()
-            if pre_rows:
-                pre_fetched_data = f"\n\nPRE-FETCHED DATABASE RESULT for '{fir_num}':\n{format_fir_detail(pre_rows[0], pre_cols)}\n\nYou MUST base your answer on this real data above."
-            else:
-                pre_fetched_data = f"\n\nDATABASE LOOKUP: No record found for FIR '{fir_num}'. Tell the user the case was not found and suggest checking the FIR number format."
+            result = db.execute(text(sql_query))
+            sql_cols = list(result.keys())
+            sql_results = result.fetchall()
         except Exception as e:
-            print(f"Pre-fetch error: {e}")
+            print(f"FIR fetch error: {e}")
+            sql_err_occurred = True
+    else:
+        while attempt <= max_retries:
+            try:
+                if attempt == 0:
+                    prompt = f"{SQL_GENERATION_PROMPT}\n\nCONVERSATION HISTORY:\n{history_text}\n\nUSER: {user_message}\n\nRespond with ONLY a valid JSON object (no markdown, no code fences)."
+                else:
+                    prompt = (
+                        f"{SQL_GENERATION_PROMPT}\n\nCONVERSATION HISTORY:\n{history_text}\n\nUSER: {user_message}\n\n"
+                        f"{feedback_msg}\n\n"
+                        f"Please inspect the database schema, correct the syntax, and output a valid SQL statement in the JSON object (no markdown, no code fences)."
+                    )
 
-    while attempt <= max_retries:
-        try:
-            if attempt == 0:
-                prompt = f"{system_prompt}\n\nCONVERSATION HISTORY:\n{history_text}{pre_fetched_data}\n\nUSER: {user_message}\n\nRespond with ONLY a valid JSON object (no markdown, no code fences)."
-            else:
-                prompt = (
-                    f"{system_prompt}\n\nCONVERSATION HISTORY:\n{history_text}{pre_fetched_data}\n\nUSER: {user_message}\n\n"
-                    f"{feedback_msg}\n\n"
-                    f"Please inspect the database schema, correct the syntax, and output a valid SQL statement in the JSON object (no markdown, no code fences)."
-                )
+                url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+                payload = {"contents": [{"parts": [{"text": prompt}]}]}
 
-            url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
-            payload = {"contents": [{"parts": [{"text": prompt}]}]}
+                resp = await client.post(url, json=payload, headers={"X-goog-api-key": GEMINI_API_KEY})
+                if resp.status_code != 200:
+                    print(f"Gemini SQL Gen error {resp.status_code}: {resp.text[:200]}")
+                    return get_mock_response(user_message, db, ui_language)
 
-            client = get_httpx_client()
-            resp = await client.post(url, json=payload, headers={"X-goog-api-key": GEMINI_API_KEY})
+                data = resp.json()
+                raw = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                raw = re.sub(r'^```json\s*', '', raw)
+                raw = re.sub(r'\s*```$', '', raw)
+                raw = re.sub(r'^```\s*', '', raw)
+                parsed = json.loads(raw)
 
-            if resp.status_code != 200:
-                print(f"Gemini error {resp.status_code}: {resp.text[:200]}")
-                return get_mock_response(user_message, db, ui_language)
+                sql_query = parsed.get("sql", "")
+                if not sql_query or not sql_query.strip().upper().startswith("SELECT"):
+                    break
 
-            data = resp.json()
-            raw = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-            raw = re.sub(r'^```json\s*', '', raw)
-            raw = re.sub(r'\s*```$', '', raw)
-            raw = re.sub(r'^```\s*', '', raw)
-            parsed = json.loads(raw)
-
-            sql_query = parsed.get("sql", "") or pre_sql
-            result_count = 0
-            sql_data = ""
-
-            if sql_query and sql_query.strip().upper().startswith("SELECT"):
                 try:
                     result = db.execute(text(sql_query))
-                    cols = list(result.keys())
-                    rows = result.fetchall()
-                    result_count = len(rows)
-                    # If Gemini produced a different SQL, use its results to enrich the answer
-                    if rows and not pre_fetched_data:
-                        sql_data = format_sql_results(rows, cols)
+                    sql_cols = list(result.keys())
+                    sql_results = result.fetchall()
+                    sql_err_occurred = False
+                    break
                 except Exception as sql_err:
                     print(f"SQL exec error on attempt {attempt}: {sql_err}")
                     feedback_msg = f"The SQL query you generated: `{sql_query}` failed with error: `{str(sql_err)}`."
+                    sql_err_occurred = True
                     attempt += 1
                     continue
 
-            # If SQL execution succeeded, or if no SELECT query was run, construct response
-            answer = parsed.get("answer", "")
-            if pre_fetched_data and pre_rows and (not answer or len(answer) < 50):
-                answer = f"🔍 **Case Details Found**\n\n{format_fir_detail(pre_rows[0], pre_cols)}"
-                result_count = 1
+            except Exception as e:
+                print(f"Gemini exception during SQL Gen attempt {attempt}: {e}")
+                attempt += 1
+                if attempt > max_retries:
+                    return get_mock_response(user_message, db, ui_language)
 
-            return {
-                "answer": answer or "I could not process that query.",
-                "sql": sql_query,
-                "insights": parsed.get("insights", []),
-                "result_count": result_count,
-                "language": language
-            }
+    if sql_err_occurred:
+        return get_mock_response(user_message, db, ui_language)
 
-        except Exception as e:
-            print(f"Gemini exception on attempt {attempt}: {e}")
-            attempt += 1
-            if attempt > max_retries:
-                return get_mock_response(user_message, db, ui_language)
+    # 2. Step 2: Answer Synthesis
+    try:
+        formatted_db_data = ""
+        if sql_query and sql_query.strip().upper().startswith("SELECT"):
+            formatted_db_data = f"\n\nDATABASE QUERY: {sql_query}\nRETRIEVED DATA:\n" + format_sql_results(sql_results, sql_cols)
+        else:
+            formatted_db_data = "\n\nDATABASE QUERY: None (Not requested/needed for this type of query)."
 
-    return get_mock_response(user_message, db, ui_language)
+        lang_instruction = LANG_INSTRUCTIONS.get(language, LANG_INSTRUCTIONS["en"])
+        synthesis_prompt = f"{ANSWER_SYNTHESIS_PROMPT}\n{lang_instruction}\n\nCONVERSATION HISTORY:\n{history_text}{formatted_db_data}\n\nUSER: {user_message}\n\nRespond with ONLY a valid JSON object (no markdown, no code fences)."
+
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+        payload = {"contents": [{"parts": [{"text": synthesis_prompt}]}]}
+
+        resp = await client.post(url, json=payload, headers={"X-goog-api-key": GEMINI_API_KEY})
+        if resp.status_code != 200:
+            print(f"Gemini Synthesis error {resp.status_code}: {resp.text[:200]}")
+            return get_mock_response(user_message, db, ui_language)
+
+        data = resp.json()
+        raw = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        raw = re.sub(r'^```json\s*', '', raw)
+        raw = re.sub(r'\s*```$', '', raw)
+        raw = re.sub(r'^```\s*', '', raw)
+        parsed = json.loads(raw)
+
+        # Handle formatting for cases
+        answer = parsed.get("answer", "")
+        if fir_num and sql_results and (not answer or len(answer) < 50):
+            answer = f"🔍 **Case Details Found**\n\n{format_fir_detail(sql_results[0], sql_cols)}"
+
+        return {
+            "answer": answer or "I could not synthesize a response.",
+            "sql": sql_query,
+            "insights": parsed.get("insights", []),
+            "result_count": len(sql_results),
+            "language": language
+        }
+
+    except Exception as e:
+        print(f"Gemini Synthesis exception: {e}")
+        return get_mock_response(user_message, db, ui_language)
