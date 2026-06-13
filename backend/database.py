@@ -52,11 +52,11 @@ class Suspect(Base):
     alias = Column(String)
     age = Column(Integer)
     gender = Column(String)
-    district = Column(String)
+    district = Column(String, index=True)
     occupation = Column(String)
     crime_history = Column(Text)   # comma-separated crime IDs
     connections = Column(Text)     # comma-separated suspect IDs
-    risk_level = Column(String)    # Low, Medium, High
+    risk_level = Column(String, index=True)    # Low, Medium, High
     photo_url = Column(String)
 
 
@@ -132,20 +132,20 @@ class AuditLog(Base):
 class Prediction(Base):
     __tablename__ = "predictions"
     id = Column(Integer, primary_key=True, index=True)
-    district = Column(String)
-    crime_type = Column(String)
+    district = Column(String, index=True)
+    crime_type = Column(String, index=True)
     predicted_month = Column(String)
     predicted_count = Column(Integer)
     confidence = Column(Float)
-    severity = Column(String)   # Critical, Warning, Normal
-    trend = Column(String)      # Rising, Stable, Falling
+    severity = Column(String, index=True)   # Critical, Warning, Normal
+    trend = Column(String, index=True)      # Rising, Stable, Falling
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class FinancialAccount(Base):
     __tablename__ = "financial_accounts"
     id             = Column(Integer, primary_key=True, index=True)
-    suspect_id     = Column(Integer, ForeignKey("suspects.id"), nullable=True)
+    suspect_id     = Column(Integer, ForeignKey("suspects.id"), nullable=True, index=True)
     account_number = Column(String, unique=True, index=True)
     bank_name      = Column(String)
     account_type   = Column(String)   # Savings, Current, Crypto, Hawala
@@ -157,12 +157,12 @@ class FinancialAccount(Base):
 class FinancialTransaction(Base):
     __tablename__ = "financial_transactions"
     id               = Column(Integer, primary_key=True, index=True)
-    from_account     = Column(Integer, ForeignKey("financial_accounts.id"), nullable=True)
-    to_account       = Column(Integer, ForeignKey("financial_accounts.id"), nullable=True)
+    from_account     = Column(Integer, ForeignKey("financial_accounts.id"), nullable=True, index=True)
+    to_account       = Column(Integer, ForeignKey("financial_accounts.id"), nullable=True, index=True)
     amount           = Column(Float)
     date             = Column(String)
-    crime_id         = Column(Integer, ForeignKey("crimes.id"), nullable=True)
-    suspicious       = Column(Boolean, default=False)
+    crime_id         = Column(Integer, ForeignKey("crimes.id"), nullable=True, index=True)
+    suspicious       = Column(Boolean, default=False, index=True)
     flag_reason      = Column(String, nullable=True)
     transaction_type = Column(String)   # Transfer, Withdrawal, Crypto, Cash
     created_at       = Column(DateTime, default=datetime.utcnow)
