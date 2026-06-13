@@ -118,6 +118,9 @@ async def create_user(
     if current_user.role != "super_admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     
+    if user_in.role not in ["super_admin", "district_sp", "investigator", "analyst", "readonly"]:
+        raise HTTPException(status_code=400, detail="Invalid role designation")
+    
     # Check if user already exists
     existing = db.query(User).filter(User.username == user_in.username).first()
     if existing:

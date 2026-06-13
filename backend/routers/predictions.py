@@ -34,20 +34,22 @@ async def get_alerts(severity: Optional[str] = None, district: Optional[str] = N
 @router.get("/hotspots")
 async def get_hotspots(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     """ML-powered: top districts by predicted next-month crime volume."""
-    ml_results = ml_top_district_forecasts(db, top_n=10)
+    ml_results = ml_top_district_forecasts(db, top_n=20)
     if ml_results:
-        return [{
-            "district":        r["district"],
-            "crime_type":      "All Types",
-            "predicted_count": r["predicted_next_month"],
-            "confidence":      r["confidence"],
-            "severity":        r["severity"],
-            "trend":           r["trend"],
-            "model":           r["model"],
-            "ml_powered":      True,
-        } for r in ml_results]
-    # Fallback to DB predictions if ML fails
-    critical = db.query(Prediction).filter(Prediction.severity == "Critical") \
+        filtered = [r for r in ml_results if r["severity"] in ("Critical", "Warning")]
+        if filtered:
+            return [{
+                "district":        r["district"],
+                "crime_type":      "All Types",
+                "predicted_count": r["predicted_next_month"],
+                "confidence":      r["confidence"],
+                "severity":        r["severity"],
+                "trend":           r["trend"],
+                "model":           r["model"],
+                "ml_powered":      True,
+            } for r in filtered[:10]]
+    # Fallback to DB predictions if ML fails or is empty
+    critical = db.query(Prediction).filter(Prediction.severity.in_(["Critical", "Warning"])) \
                   .order_by(Prediction.predicted_count.desc()).limit(10).all()
     return [{"district": p.district, "crime_type": p.crime_type,
              "predicted_count": p.predicted_count, "confidence": p.confidence,

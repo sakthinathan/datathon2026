@@ -159,7 +159,7 @@ export default function DashboardHome() {
         setSeverity(results[2]);
         setCrimeTypes(results[3].slice(0, 6));
 
-        let ptr = 4;
+        const ptr = 4;
         if (role === 'super_admin') {
           setAuditLogs(results[ptr]?.logs || []);
           setAuditStats(results[ptr + 1] || {});
@@ -194,7 +194,6 @@ export default function DashboardHome() {
       district: user?.district || 'Mysuru',
     };
 
-    api.createUser // wait, we have fetchAuth/api helper to create crime
     fetch(`${API_BASE}/investigator/crimes`, {
       method: 'POST',
       headers: {
@@ -838,7 +837,7 @@ function ReadOnlyDashboard({ overview, yearlyTrends, crimeTypes, severity, bulle
           <div style={{ fontSize: 50, marginBottom: 12 }}>📄</div>
           <h3 style={{ margin: '0 0 6px 0', fontSize: 14, fontWeight: 700 }}>State Crime Briefing Report</h3>
           <p style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5, maxWidth: 220, marginBottom: 16 }}>
-            Download a secure, read-only PDF document of this month's state crime trends and tactical analysis.
+            Download a secure, read-only PDF document of this month&apos;s state crime trends and tactical analysis.
           </p>
           <button onClick={handlePrint} className="btn btn-primary" style={{ width: '80%', padding: 10, fontSize: 12, fontWeight: 700 }}>
             🖨️ Print Executive Summary
