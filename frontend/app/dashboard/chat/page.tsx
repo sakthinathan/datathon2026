@@ -185,7 +185,7 @@ export default function ChatPage() {
             <div className={`chat-session-item ${!activeSession ? 'active' : ''}`} onClick={newSession}>
               <div className="session-title">+ New Investigation</div>
             </div>
-            {sessions.map(s => (
+            {sessions && sessions.map(s => (
               <div key={s.id} className={`chat-session-item ${activeSession === s.id ? 'active' : ''}`}
                 onClick={() => loadSession(s.id)}>
                 <div className="session-title">{s.title}</div>
